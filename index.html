@@ -147,7 +147,6 @@ border-radius:var(--radius-sm);padding:6px 4px;
 .radar-item .t{font-size:16px;font-weight:700;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .radar-item .d{font-size:13.5px;color:var(--text-3);margin-top:2px}
 .radar-item .arrow{color:var(--text-3);font-size:18px;flex:0 0 auto}
-.radar-expired{font-size:13.5px;color:var(--text-3);padding:2px 6px 0}
 
 /* ---------- calendar ---------- */
 .cal-list{display:flex;flex-direction:column}
@@ -195,7 +194,6 @@ background:rgba(255,255,255,.07);border:1px solid var(--border-soft);color:var(-
 .tag.dl{background:rgba(255,255,255,.06)}
 .tag.dl.urgent{color:var(--danger);border-color:rgba(255,107,107,.4)}
 .tag.dl.soon{color:var(--orange);border-color:rgba(255,159,67,.4)}
-.tag.dl.expired{color:var(--text-3)}
 .card h3{font-size:18.5px;line-height:1.5;margin:0 0 6px;font-weight:700}
 .card p{margin:0;color:var(--text-2);font-size:16px;line-height:1.6}
 .card .open{margin-top:12px;font-size:14.5px;font-weight:700;color:var(--accent);display:inline-flex;gap:5px;align-items:center}
@@ -249,7 +247,6 @@ h1{font-size:40px}
 <div class="sec-head"><h2>期限雷達</h2><span class="hint">依到期日排序・開啟時即時計算</span></div>
 <div id="radarHero"></div>
 <div class="radar-list" id="radarList"></div>
-<p class="radar-expired" id="radarExpired"></p>
 </section>
 
 <!-- 行事曆重點 -->
@@ -297,11 +294,9 @@ h1{font-size:40px}
 var DATA = [
 {"title":"教育部115年度學生學習歷程檔案分享會系列活動第3場次分享會","url":"https://hwsh.tc.edu.tw/p/406-1066-645044,r71.php?Lang=zh-tw","deadline":"2026-11-15","deadline_label":"報名截止","topic":"學習歷程","relevant":true,"summary":"教育部舉辦學習歷程檔案分享會，邀請高中生分享成果並由大學教授與高中教師即時回饋，高一學生可透過 YouTube 直播線上觀摩。有意參加者請至 Google 表單報名並選擇普通型組別，務必填寫正確信箱以收取直播連結。"},
 {"title":"115學年度高中部及國中部校內國語文競賽實施計畫與報名須知","url":"https://hwsh.tc.edu.tw/p/406-1066-637757,r4268.php?Lang=zh-tw","deadline":"2026-12-04","deadline_label":"報名截止","topic":"競賽","relevant":true,"summary":"115學年度校內國語文競賽歡迎高中部學生報名，項目包括國語演說、朗讀、作文、字音字形及寫字等。想參賽者請由任課老師或國文小老師協助上網填報，優勝者可代表學校參加臺中市國語文競賽初賽。"},
-{"title":"高一學習策略工作坊-報名從速!!!","url":"https://hwsh.tc.edu.tw/p/406-1066-644368,r70.php?Lang=zh-tw","deadline":"2026-11-04","deadline_label":"報名截止","topic":"活動","relevant":true,"summary":"輔導室舉辦高一學習策略工作坊，午間於橘知未來教室（輔導室樓上）進行，每場限20人。高一學生可依意願自由選填場次，透過公告表單儘速報名。"},
 {"title":"【高中部【「大學選才與高中育才輔助系統」2026年ColleGo!資源","url":"https://hwsh.tc.edu.tw/p/406-1066-641498,r71.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"升學","relevant":true,"summary":"ColleGo!推出2026家長日系列影片，介紹大學現況、熱門學類趨勢與系統操作，高一學生可與家長一起上網觀看，提早探索有興趣的校系與生涯方向。"},
 {"title":"教育部116學年度大學辦理特殊選才及資安外加名額學校招生資訊","url":"https://hwsh.tc.edu.tw/p/406-1066-641495,r71.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"升學","relevant":true,"summary":"116學年度大學特殊選才（含資安外加名額）招生資訊，適合具特殊才能、經歷或成就的學生提早認識不以學測為主要篩選的升學管道。有興趣的高一學生可至大學多元入學升學網查詢。"},
 {"title":"翰林雲端學院帳號已開通，歡迎高中同學多加利用","url":"https://hwsh.tc.edu.tw/p/406-1066-638830,r70.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"行政","relevant":true,"summary":"高中部同學的翰林雲端學院帳號已開通，請以學號及密碼「hwsh＋身分證後四碼」，從學校首頁「校園常用連結」登入，並先參閱操作手冊與教學影片。"},
-{"title":"本校115學年度第一學期課表","url":"https://hwsh.tc.edu.tw/p/406-1066-624979,r4268.php?Lang=zh-tw","deadline":"2026-09-07","deadline_label":"正式課表公布","topic":"行政","relevant":true,"summary":"學校已公布115學年度第一學期暫定課表，高一學生請點公告連結查看班級課程安排，並在正式課表公布後再次確認是否有異動。"},
 {"title":"115學年度第一學期 教科書選用版本公告","url":"https://hwsh.tc.edu.tw/p/406-1066-593194,r4268.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"行政","relevant":true,"summary":"學校公告115學年度第一學期教科書選用版本，含高中本土語版本；高一學生可至公告下載高中版PDF，確認新學期上課用書版本。"},
 {"title":"114學年度國樂社招生中，歡迎有興趣的同學報名參加~","url":"https://hwsh.tc.edu.tw/p/406-1066-517833,r4268.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"活動","relevant":true,"summary":"114學年度國樂社正在招生，歡迎對國樂有興趣的高一同學報名參加，詳情請參閱公告圖片說明。"},
 {"title":"惠文高中排球隊 熱烈招生中~~ 歡迎有興趣的新生報名！","url":"https://hwsh.tc.edu.tw/p/406-1066-480957,r4268.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"活動","relevant":true,"summary":"惠文高中排球隊招收高中部一年級新生，男女皆可、分男排與女排，有興趣者請填寫高中部報名表單，填妥後將陸續通知面試。"},
@@ -330,7 +325,6 @@ var wk = ["日","一","二","三","四","五","六"][d.getDay()];
 return (d.getMonth()+1)+"/"+d.getDate()+"（週"+wk+"）";
 }
 function urgency(days){
-if(days < 0) return "expired";
 if(days <= 3) return "urgent";
 if(days <= 10) return "soon";
 return "ok";
@@ -343,10 +337,8 @@ var withDl = DATA.filter(function(x){ return x.deadline;}).map(function(x){
 return { item:x, days:daysLeft(x.deadline)};
 });
 var upcoming = withDl.filter(function(x){ return x.days >= 0;}).sort(function(a,b){ return a.days-b.days;});
-var expired = withDl.filter(function(x){ return x.days < 0;}).sort(function(a,b){ return b.days-a.days;});
 var hero = document.getElementById("radarHero");
 var list = document.getElementById("radarList");
-var expEl = document.getElementById("radarExpired");
 
 if(upcoming.length === 0){
 hero.innerHTML = '<div class="glass radar-hero"><div class="kicker">期限雷達</div><h3>目前沒有即將到期的事項</h3><p class="radar-date">有新期限時會出現在這裡。</p></div>';
@@ -374,9 +366,6 @@ return '<a class="glass radar-item" href="' + esc(x.item.url) + '" target="_blan
 '<span class="arrow">›</span></a>';
 }).join("");
 }
-if(expired.length){
-expEl.textContent = "已截止 " + expired.length + " 項（" + expired.map(function(x){ return x.item.title.replace(/]*】/g,"").slice(0,14);}).join("、") + "），仍列在下方公告列表中供查閱。";
-}
 })();
 
 /* ----- 公告列表 ----- */
@@ -397,8 +386,7 @@ if(!item.deadline) return "";
 var d = daysLeft(item.deadline);
 var u = urgency(d);
 var txt;
-if(d < 0) txt = item.deadline_label + " " + fmtDate(item.deadline) + "・已截止";
-else if(d === 0) txt = item.deadline_label + " " + fmtDate(item.deadline) + "・今天截止";
+if(d === 0) txt = item.deadline_label + " " + fmtDate(item.deadline) + "・今天截止";
 else txt = item.deadline_label + " " + fmtDate(item.deadline) + "・剩 " + d + " 天";
 return '<span class="tag dl ' + u + '">' + esc(txt) + '</span>';
 }
@@ -411,17 +399,18 @@ for(var i=0;i<btns.length;i++){
 btns[i].setAttribute("aria-pressed", btns[i].getAttribute("data-topic")===state.topic);
 }
 var items = DATA.filter(function(x){
+if(x.deadline && daysLeft(x.deadline) < 0) return false;
 if(state.scope==="relevant" &&!x.relevant) return false;
 if(state.topic!=="全部主題" && x.topic!==state.topic) return false;
 return true;
 });
-/* 有期限且未過期的排前面（近到遠），其餘維持原順序，已過期沉底 */
+/* 有期限的排前面（近到遠），其餘維持原順序 */
 var withIdx = items.map(function(x,i){ return {x:x,i:i};});
 withIdx.sort(function(a,b){
 var da = a.x.deadline? daysLeft(a.x.deadline): null;
 var db = b.x.deadline? daysLeft(b.x.deadline): null;
-var ga = da===null? 1: (da<0? 2: 0);
-var gb = db===null? 1: (db<0? 2: 0);
+var ga = da===null? 1: 0;
+var gb = db===null? 1: 0;
 if(ga!==gb) return ga-gb;
 if(ga===0 && da!==db) return da-db;
 return a.i-b.i;
