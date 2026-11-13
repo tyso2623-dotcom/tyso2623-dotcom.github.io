@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b100e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="惠文高一公告">
+<link rel="icon" href="data:,">
+<title>惠文高一公告・網頁版</title>
+<style>
+:root{
+--bg:#0b100e;
+--accent:#3dd68c;
+--accent-dim:rgba(61,214,140,.16);
+--accent-border:rgba(61,214,140,.35);
+--text:#f2f5f3;
+--text-2:rgba(242,245,243,.72);
+--text-3:rgba(242,245,243,.48);
+--glass:rgba(255,255,255,.055);
+--glass-strong:rgba(255,255,255,.085);
+--border:rgba(255,255,255,.13);
+--border-soft:rgba(255,255,255,.08);
+--warn:#f5b84c;
+--danger:#ff6b6b;
+--orange:#ff9f43;
+--radius:22px;
+--radius-sm:14px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+margin:0;
+background:
+radial-gradient(900px 520px at 85% -60px, rgba(61,214,140,.14), transparent 62%),
+radial-gradient(700px 500px at -10% 38%, rgba(61,214,140,.07), transparent 60%),
+linear-gradient(168deg,#0d1512 0%, #0b100e 42%, #090d0b 100%);
+background-attachment:fixed;
+color:var(--text);
+font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","PingFang SC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+font-size:17px;
+line-height:1.65;
+-webkit-font-smoothing:antialiased;
+padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+min-height:100dvh;
+}
+a{color:inherit}
+.wrap{max-width:680px;margin:0 auto;padding:0 16px 40px}
+
+/* ---------- glass ---------- */
+.glass{
+background:var(--glass);
+border:1px solid var(--border);
+border-radius:var(--radius);
+-webkit-backdrop-filter:blur(20px) saturate(150%);
+backdrop-filter:blur(20px) saturate(150%);
+box-shadow: inset 0 1px 0 rgba(255,255,255,.14), inset 0 -1px 0 rgba(0,0,0,.18), 0 12px 32px rgba(0,0,0,.28);
+position:relative;
+}
+.glass::before{
+content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+background:linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,0) 42%);
+}
+
+/* ---------- header ---------- */
+header{padding:28px 4px 6px}
+.eyebrow{
+display:inline-flex;align-items:center;gap:7px;
+font-size:13px;font-weight:700;letter-spacing:.14em;color:var(--accent);
+text-transform:uppercase;
+}
+.eyebrow::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+h1{font-size:34px;line-height:1.2;font-weight:800;letter-spacing:-.01em;margin:10px 0 6px}
+.subtitle{color:var(--text-2);font-size:17px;margin:0}
+.meta-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.meta-chip{
+display:inline-flex;align-items:center;gap:6px;
+font-size:13.5px;font-weight:600;color:var(--text-2);
+background:rgba(255,255,255,.06);border:1px solid var(--border-soft);
+border-radius:999px;padding:7px 12px;min-height:36px;
+-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+}
+.meta-chip b{color:var(--text);font-weight:700}
+.meta-chip .dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+
+/* ---------- sections ---------- */
+section{margin-top:30px}
+.sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:0 4px;margin-bottom:12px}
+.sec-head h2{font-size:21px;font-weight:800;margin:0;letter-spacing:-.01em}
+.sec-head .hint{font-size:13.5px;color:var(--text-3);white-space:nowrap}
+
+/* ---------- alert ---------- */
+.alert{
+border-color:rgba(245,184,76,.35);
+background:rgba(245,184,76,.07);
+padding:18px 18px 16px;
+}
+.alert-tag{
+display:inline-flex;align-items:center;gap:6px;
+font-size:12.5px;font-weight:800;letter-spacing:.08em;
+color:#0b100e;background:var(--warn);
+border-radius:999px;padding:4px 10px;
+}
+.alert h3{font-size:19px;margin:10px 0 6px;line-height:1.4}
+.alert p{margin:0;color:var(--text-2);font-size:16px}
+.alert p b{color:var(--text)}
+.alert a{color:var(--warn);font-weight:700;text-decoration:none;border-bottom:1px solid rgba(245,184,76,.4)}
+
+/* ---------- radar hero ---------- */
+.radar-hero{padding:22px 20px 18px;overflow:hidden}
+.radar-hero .kicker{font-size:13px;font-weight:700;letter-spacing:.12em;color:var(--accent)}
+.radar-hero h3{font-size:20px;line-height:1.45;margin:8px 0 4px;font-weight:700}
+.radar-count{display:flex;align-items:flex-end;gap:10px;margin-top:14px}
+.radar-count .num{
+font-size:76px;line-height:.95;font-weight:800;letter-spacing:-.03em;
+font-variant-numeric:tabular-nums;
+}
+.radar-count .unit{font-size:20px;font-weight:700;padding-bottom:8px;color:var(--text-2)}
+.radar-count.urgent .num{color:var(--danger)}
+.radar-count.soon .num{color:var(--orange)}
+.radar-count.ok .num{color:var(--accent)}
+.radar-date{color:var(--text-2);font-size:15.5px;margin-top:4px}
+.radar-date b{color:var(--text)}
+.radar-cta{
+display:inline-flex;align-items:center;gap:6px;margin-top:16px;
+background:var(--accent);color:#07130c;font-weight:800;font-size:16px;
+border-radius:999px;padding:11px 18px;text-decoration:none;min-height:44px;
+}
+.radar-list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.radar-item{
+display:flex;align-items:center;gap:14px;
+padding:14px 16px;text-decoration:none;
+}
+.radar-item .days{
+flex:0 0 auto;text-align:center;min-width:58px;
+background:rgba(255,255,255,.06);border:1px solid var(--border-soft);
+border-radius:var(--radius-sm);padding:6px 4px;
+}
+.radar-item .days b{display:block;font-size:22px;line-height:1.1;font-variant-numeric:tabular-nums}
+.radar-item .days span{font-size:11.5px;color:var(--text-3);font-weight:600}
+.radar-item .days.urgent b{color:var(--danger)}
+.radar-item .days.soon b{color:var(--orange)}
+.radar-item .body{flex:1;min-width:0}
+.radar-item .t{font-size:16px;font-weight:700;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.radar-item .d{font-size:13.5px;color:var(--text-3);margin-top:2px}
+.radar-item .arrow{color:var(--text-3);font-size:18px;flex:0 0 auto}
+.radar-expired{font-size:13.5px;color:var(--text-3);padding:2px 6px 0}
+
+/* ---------- calendar ---------- */
+.cal-list{display:flex;flex-direction:column}
+.cal-item{display:flex;gap:16px;padding:15px 18px}
+.cal-item +.cal-item{border-top:1px solid var(--border-soft)}
+.cal-date{
+flex:0 0 64px;text-align:center;
+background:var(--accent-dim);border:1px solid var(--accent-border);
+border-radius:var(--radius-sm);padding:8px 2px;height:fit-content;
+}
+.cal-date b{display:block;font-size:17px;line-height:1.2;color:var(--accent);font-variant-numeric:tabular-nums}
+.cal-date span{font-size:11.5px;color:var(--text-2);font-weight:600}
+.cal-item .body{flex:1;padding-top:2px}
+.cal-item .t{font-size:17px;font-weight:700;line-height:1.4}
+.cal-item .d{font-size:14.5px;color:var(--text-2);margin-top:2px}
+
+/* ---------- filters ---------- */
+.filters{position:sticky;top:10px;z-index:20;padding:12px}
+.seg{display:flex;background:rgba(0,0,0,.32);border:1px solid var(--border-soft);border-radius:999px;padding:4px;gap:4px}
+.seg button{
+flex:1;border:0;background:transparent;color:var(--text-2);
+font:inherit;font-size:16px;font-weight:700;
+border-radius:999px;padding:9px 8px;min-height:44px;cursor:pointer;
+}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#07130c}
+.topic-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.topic-row button{
+border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--text-2);
+font:inherit;font-size:14.5px;font-weight:600;
+border-radius:999px;padding:8px 14px;min-height:38px;cursor:pointer;
+}
+.topic-row button[aria-pressed="true"]{background:var(--accent-dim);border-color:var(--accent-border);color:var(--accent)}
+.count-line{font-size:13.5px;color:var(--text-3);padding:10px 6px 0}
+
+/* ---------- cards ---------- */
+.cards{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+.card{display:block;text-decoration:none;padding:18px}
+.card-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.tag{
+font-size:12.5px;font-weight:700;border-radius:999px;padding:4px 10px;
+background:rgba(255,255,255,.07);border:1px solid var(--border-soft);color:var(--text-2);
+}
+.tag.topic-learning{background:var(--accent-dim);border-color:var(--accent-border);color:var(--accent)}
+.tag.rel{background:rgba(255,255,255,.1);color:var(--text)}
+.tag.dl{background:rgba(255,255,255,.06)}
+.tag.dl.urgent{color:var(--danger);border-color:rgba(255,107,107,.4)}
+.tag.dl.soon{color:var(--orange);border-color:rgba(255,159,67,.4)}
+.tag.dl.expired{color:var(--text-3)}
+.card h3{font-size:18.5px;line-height:1.5;margin:0 0 6px;font-weight:700}
+.card p{margin:0;color:var(--text-2);font-size:16px;line-height:1.6}
+.card .open{margin-top:12px;font-size:14.5px;font-weight:700;color:var(--accent);display:inline-flex;gap:5px;align-items:center}
+.empty{padding:28px 20px;text-align:center;color:var(--text-2);font-size:16px}
+
+/* ---------- install tip ---------- */
+.tip{padding:16px 18px;margin-top:30px}
+.tip h3{margin:0 0 4px;font-size:17px}
+.tip p{margin:0;color:var(--text-2);font-size:15px}
+.tip b{color:var(--text)}
+
+/* ---------- footer ---------- */
+footer{margin-top:30px;padding:20px 18px}
+footer h3{margin:0 0 6px;font-size:17px}
+footer p{margin:0 0 10px;color:var(--text-2);font-size:15px}
+footer a{color:var(--accent);font-weight:700;text-decoration:none}
+footer.src{font-size:13.5px;color:var(--text-3);margin-top:14px;padding-top:12px;border-top:1px solid var(--border-soft)}
+@media (min-width:560px){
+h1{font-size:40px}
+.cards{display:grid;grid-template-columns:1fr 1fr;align-items:start}
+.radar-count .num{font-size:88px}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+<span class="eyebrow">Hui-Wen Senior High</span>
+<h1>惠文高一公告</h1>
+<p class="subtitle">臺中市立惠文高中・高一相關公告與期限，一頁看完。</p>
+<div class="meta-row">
+<span class="meta-chip"><span class="dot"></span>資料更新 <b>2026-11-13</b></span>
+<span class="meta-chip">每兩天更新一次</span>
+<span class="meta-chip">來源：學校官網公告</span>
+</div>
+</header>
+
+<!-- 資安提示 -->
+<section aria-label="資安提醒">
+<div class="glass alert">
+<span class="alert-tag">⚠ 資安提醒</span>
+<h3>ischool 校務系統個資外洩，請慎防詐騙</h3>
+<p>校務系統廠商於 <b>2026-11-05</b> 遭駭，師生與家長的<b>姓名及聯絡資訊</b>外洩；學校說明<b>成績與學籍未遭竄改</b>。近期若接到自稱學校、銀行或檢警的電話或連結要求提供資料、匯款，請先掛斷並向學校或 165 反詐騙專線查證，不要直接點開不明連結。</p>
+</div>
+</section>
+
+<!-- 期限雷達 -->
+<section aria-label="期限雷達">
+<div class="sec-head"><h2>期限雷達</h2><span class="hint">依到期日排序・開啟時即時計算</span></div>
+<div id="radarHero"></div>
+<div class="radar-list" id="radarList"></div>
+<p class="radar-expired" id="radarExpired"></p>
+</section>
+
+<!-- 行事曆重點 -->
+<section aria-label="行事曆近期重點">
+<div class="sec-head"><h2>行事曆近期重點</h2><span class="hint">115 學年度第一學期</span></div>
+<div class="glass cal-list">
+<div class="cal-item"><div class="cal-date"><b>11/16</b><span>– 11/20</span></div><div class="body"><div class="t">國際教育週</div><div class="d">11/16（一）– 11/20（五）</div></div></div>
+<div class="cal-item"><div class="cal-date"><b>11/27</b><span>週五</span></div><div class="body"><div class="t">高一特色活動 3</div><div class="d">11/27（五）</div></div></div>
+<div class="cal-item"><div class="cal-date"><b>12/1</b><span>– 12/3</span></div><div class="body"><div class="t">第二次段考</div><div class="d">12/1（二）– 12/3（四）</div></div></div>
+<div class="cal-item"><div class="cal-date"><b>12/11</b><span>週五</span></div><div class="body"><div class="t">高一特色活動 4</div><div class="d">12/11（五）</div></div></div>
+<div class="cal-item"><div class="cal-date"><b>12/12</b><span>週六</span></div><div class="body"><div class="t">高中英聽第二次測驗</div><div class="d">12/12（六）</div></div></div>
+<div class="cal-item"><div class="cal-date"><b>12/21</b><span>週一</span></div><div class="body"><div class="t">高中部國語文競賽</div><div class="d">12/21（一）・校內報名至 12/4 截止</div></div></div>
+</div>
+</section>
+
+<!-- 公告列表 -->
+<section aria-label="公告列表">
+<div class="sec-head"><h2>公告列表</h2><span class="hint">點卡片看官網原文</span></div>
+<div class="glass filters">
+<div class="seg" role="group" aria-label="相關範圍">
+<button type="button" id="segRel" aria-pressed="true">高一相關</button>
+<button type="button" id="segAll" aria-pressed="false">全部</button>
+</div>
+<div class="topic-row" id="topicRow" role="group" aria-label="主題篩選"></div>
+<p class="count-line" id="countLine"></p>
+</div>
+<div class="cards" id="cards"></div>
+</section>
+
+<!-- 加入主畫面 -->
+<div class="glass tip">
+<h3>加到 iPhone 主畫面，像 App 一樣用</h3>
+<p>在 Safari 打開本頁 → 點下方<b>分享</b>按鈕 → 選<b>「加入主畫面」</b>。桌面會出現圖示，之後點開就是全螢幕，不用每次找連結。</p>
+</div>
+
+<footer class="glass">
+<h3>學校行事曆</h3>
+<p>完整學期行程以學校官方行事曆為準：<br><a href="https://hwsh.tc.edu.tw/var/file/66/1066/img/386956800.pdf" target="_blank" rel="noopener">開啟行事曆 PDF ↗</a></p>
+<p class="src">資料來源：臺中市立惠文高級中學官網（hwsh.tc.edu.tw）公告，2026-11-13 核實彙整，本頁每兩天更新一次。本頁為彙整摘要，正式規定、報名方式與期限請以官網原文為準。網頁版僅供瀏覽：帳號、關心清單與到期通知提醒為 Android App 版功能。</p>
+</footer>
+
+</div>
+
+<script>
+var DATA = [
+{"title":"教育部115年度學生學習歷程檔案分享會系列活動第3場次分享會","url":"https://hwsh.tc.edu.tw/p/406-1066-645044,r71.php?Lang=zh-tw","deadline":"2026-11-15","deadline_label":"報名截止","topic":"學習歷程","relevant":true,"summary":"教育部舉辦學習歷程檔案分享會，邀請高中生分享成果並由大學教授與高中教師即時回饋，高一學生可透過 YouTube 直播線上觀摩。有意參加者請至 Google 表單報名並選擇普通型組別，務必填寫正確信箱以收取直播連結。"},
+{"title":"115學年度高中部及國中部校內國語文競賽實施計畫與報名須知","url":"https://hwsh.tc.edu.tw/p/406-1066-637757,r4268.php?Lang=zh-tw","deadline":"2026-12-04","deadline_label":"報名截止","topic":"競賽","relevant":true,"summary":"115學年度校內國語文競賽歡迎高中部學生報名，項目包括國語演說、朗讀、作文、字音字形及寫字等。想參賽者請由任課老師或國文小老師協助上網填報，優勝者可代表學校參加臺中市國語文競賽初賽。"},
+{"title":"高一學習策略工作坊-報名從速!!!","url":"https://hwsh.tc.edu.tw/p/406-1066-644368,r70.php?Lang=zh-tw","deadline":"2026-11-04","deadline_label":"報名截止","topic":"活動","relevant":true,"summary":"輔導室舉辦高一學習策略工作坊，午間於橘知未來教室（輔導室樓上）進行，每場限20人。高一學生可依意願自由選填場次，透過公告表單儘速報名。"},
+{"title":"【高中部【「大學選才與高中育才輔助系統」2026年ColleGo!資源","url":"https://hwsh.tc.edu.tw/p/406-1066-641498,r71.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"升學","relevant":true,"summary":"ColleGo!推出2026家長日系列影片，介紹大學現況、熱門學類趨勢與系統操作，高一學生可與家長一起上網觀看，提早探索有興趣的校系與生涯方向。"},
+{"title":"教育部116學年度大學辦理特殊選才及資安外加名額學校招生資訊","url":"https://hwsh.tc.edu.tw/p/406-1066-641495,r71.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"升學","relevant":true,"summary":"116學年度大學特殊選才（含資安外加名額）招生資訊，適合具特殊才能、經歷或成就的學生提早認識不以學測為主要篩選的升學管道。有興趣的高一學生可至大學多元入學升學網查詢。"},
+{"title":"翰林雲端學院帳號已開通，歡迎高中同學多加利用","url":"https://hwsh.tc.edu.tw/p/406-1066-638830,r70.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"行政","relevant":true,"summary":"高中部同學的翰林雲端學院帳號已開通，請以學號及密碼「hwsh＋身分證後四碼」，從學校首頁「校園常用連結」登入，並先參閱操作手冊與教學影片。"},
+{"title":"本校115學年度第一學期課表","url":"https://hwsh.tc.edu.tw/p/406-1066-624979,r4268.php?Lang=zh-tw","deadline":"2026-09-07","deadline_label":"正式課表公布","topic":"行政","relevant":true,"summary":"學校已公布115學年度第一學期暫定課表，高一學生請點公告連結查看班級課程安排，並在正式課表公布後再次確認是否有異動。"},
+{"title":"115學年度第一學期 教科書選用版本公告","url":"https://hwsh.tc.edu.tw/p/406-1066-593194,r4268.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"行政","relevant":true,"summary":"學校公告115學年度第一學期教科書選用版本，含高中本土語版本；高一學生可至公告下載高中版PDF，確認新學期上課用書版本。"},
+{"title":"114學年度國樂社招生中，歡迎有興趣的同學報名參加~","url":"https://hwsh.tc.edu.tw/p/406-1066-517833,r4268.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"活動","relevant":true,"summary":"114學年度國樂社正在招生，歡迎對國樂有興趣的高一同學報名參加，詳情請參閱公告圖片說明。"},
+{"title":"惠文高中排球隊 熱烈招生中~~ 歡迎有興趣的新生報名！","url":"https://hwsh.tc.edu.tw/p/406-1066-480957,r4268.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"活動","relevant":true,"summary":"惠文高中排球隊招收高中部一年級新生，男女皆可、分男排與女排，有興趣者請填寫高中部報名表單，填妥後將陸續通知面試。"},
+{"title":"惠文高中導覽與相關介紹","url":"https://hwsh.tc.edu.tw/p/406-1066-452970,r4268.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"其他","relevant":true,"summary":"惠文高中的導覽與介紹彙整，提供說明會錄影、校園環境、交通動線及課程與學習歷程等簡報。想更了解學校的高一同學可點選連結查看。"},
+{"title":"重申學校辦理學習歷程等作業應符合個人資料保護法等相關規範，詳如說明，請查照。","url":"https://hwsh.tc.edu.tw/p/406-1066-649400,r70.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"學習歷程","relevant":false,"summary":"學校重申學習歷程平台個資規範的行政通知，主要對象為教職員。高一學生與家長若不同意建置電子簽名檔，可改將檔案列印簽名後掃描上傳，切勿截圖挪用家長在其他文件上的簽名。"},
+{"title":"重要：116學年度身心障礙學生升學大專校院甄試","url":"https://hwsh.tc.edu.tw/p/406-1066-643255,r71.php?Lang=zh-tw","deadline":"2026-12-07","deadline_label":"報名截止","topic":"升學","relevant":false,"summary":"116學年度身心障礙學生升學大專校院甄試受理報名，對象為符合資格的應屆畢業生，高一學生尚無需報名；符合資格者應詳閱簡章，並透過學校團體報名、洽教務處特教組。"},
+{"title":"國立臺北教育大學116學年度學士班音樂學系單獨招生相關資訊","url":"https://hwsh.tc.edu.tw/p/406-1066-642498,r71.php?Lang=zh-tw","deadline":"2026-11-20","deadline_label":"報名截止","topic":"升學","relevant":false,"summary":"國立臺北教育大學音樂學系辦理116學年度學士班單獨招生，共35名，依主修分組；有意報考的高三學生請詳閱簡章並完成網路繳費與報名。"},
+{"title":"淡江大學-商管學院會計學系「116學年度繁星推薦新生獎學金」資訊","url":"https://hwsh.tc.edu.tw/p/406-1066-639322,r71.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"升學","relevant":false,"summary":"淡江大學會計學系為116學年度繁星推薦新生提供四年8學期學雜費全免、約24萬元獎學金，主要對象為應屆畢業生；對會計有興趣者可至該系網頁先了解。"},
+{"title":"115學年度國中部一年級校內英語歌唱比賽實施計畫與參賽須知","url":"https://hwsh.tc.edu.tw/p/406-1066-637657,r4268.php?Lang=zh-tw","deadline":"2026-11-30","deadline_label":"繳交截止","topic":"競賽","relevant":false,"summary":"國中部一年級全體班級參加的校內英語歌唱比賽；高中部高一學生非參加對象，無需報名。"},
+{"title":"康軒雲帳號已開通，歡迎國中部同學多加利用","url":"https://hwsh.tc.edu.tw/p/406-1066-637108,r4268.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"行政","relevant":false,"summary":"國中部康軒雲帳號開通公告，高一學生無需辦理。"},
+{"title":"115學年度國內外","url":"https://hwsh.tc.edu.tw/p/406-1066-622274,r4268.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"升學","relevant":false,"summary":"學校公布115學年度應屆畢業生的國內外大學錄取榜單，詳細名單見附件。高一學生無需辦理，僅可作為未來升學方向的參考。"},
+{"title":"115年度本校","url":"https://hwsh.tc.edu.tw/p/406-1066-613673,r4268.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"升學","relevant":false,"summary":"本校115年度國中部升學榜單，列出錄取臺中一中、臺中女中及直升惠文高中等學生名單。高一學生無需辦理，僅供參考查詢。"},
+{"title":"賀! 本校115年會考成績優異表現!","url":"https://hwsh.tc.edu.tw/p/406-1066-603489,r4268.php?Lang=zh-tw","deadline":null,"deadline_label":null,"topic":"升學","relevant":false,"summary":"國中部在國中教育會考成績表現優異的賀訊，屬國中部學生升學資訊，高一學生無需採取任何行動。"}
+];
+
+function startOfDay(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate());}
+function parseDate(s){ var p=s.split("-"); return new Date(+p[0], +p[1]-1, +p[2]);}
+function daysLeft(deadline){
+var today = startOfDay(new Date());
+var target = parseDate(deadline);
+return Math.round((target - today)/86400000);
+}
+function fmtDate(s){
+var d = parseDate(s);
+var wk = ["日","一","二","三","四","五","六"][d.getDay()];
+return (d.getMonth()+1)+"/"+d.getDate()+"（週"+wk+"）";
+}
+function urgency(days){
+if(days < 0) return "expired";
+if(days <= 3) return "urgent";
+if(days <= 10) return "soon";
+return "ok";
+}
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+
+/* ----- 期限雷達 ----- */
+(function(){
+var withDl = DATA.filter(function(x){ return x.deadline;}).map(function(x){
+return { item:x, days:daysLeft(x.deadline)};
+});
+var upcoming = withDl.filter(function(x){ return x.days >= 0;}).sort(function(a,b){ return a.days-b.days;});
+var expired = withDl.filter(function(x){ return x.days < 0;}).sort(function(a,b){ return b.days-a.days;});
+var hero = document.getElementById("radarHero");
+var list = document.getElementById("radarList");
+var expEl = document.getElementById("radarExpired");
+
+if(upcoming.length === 0){
+hero.innerHTML = '<div class="glass radar-hero"><div class="kicker">期限雷達</div><h3>目前沒有即將到期的事項</h3><p class="radar-date">有新期限時會出現在這裡。</p></div>';
+} else {
+var first = upcoming[0];
+var u = urgency(first.days);
+var dayText = first.days === 0? "今天": String(first.days);
+var unitText = first.days === 0? "截止": "天後截止";
+hero.innerHTML =
+'<div class="glass radar-hero">' +
+'<div class="kicker">最近到期・' + esc(first.item.deadline_label || "期限") + '</div>' +
+'<h3>' + esc(first.item.title) + '</h3>' +
+'<div class="radar-count ' + u + '"><span class="num">' + dayText + '</span><span class="unit">' + unitText + '</span></div>' +
+'<p class="radar-date">截止日 <b>' + fmtDate(first.item.deadline) + '</b>・' + esc(first.item.topic) + (first.item.relevant? '・高一相關': '') + '</p>' +
+'<a class="radar-cta" href="' + esc(first.item.url) + '" target="_blank" rel="noopener">看官網原文 →</a>' +
+'</div>';
+
+var rest = upcoming.slice(1);
+list.innerHTML = rest.map(function(x){
+var uu = urgency(x.days);
+return '<a class="glass radar-item" href="' + esc(x.item.url) + '" target="_blank" rel="noopener">' +
+'<span class="days ' + uu + '"><b>' + (x.days===0? "今": x.days) + '</b><span>' + (x.days===0? "截止": "天後") + '</span></span>' +
+'<span class="body"><span class="t">' + esc(x.item.title) + '</span>' +
+'<span class="d" style="display:block">' + fmtDate(x.item.deadline) + ' ' + esc(x.item.deadline_label||"") + '・' + esc(x.item.topic) + '</span></span>' +
+'<span class="arrow">›</span></a>';
+}).join("");
+}
+if(expired.length){
+expEl.textContent = "已截止 " + expired.length + " 項（" + expired.map(function(x){ return x.item.title.replace(/]*】/g,"").slice(0,14);}).join("、") + "），仍列在下方公告列表中供查閱。";
+}
+})();
+
+/* ----- 公告列表 ----- */
+var TOPICS = ["全部主題","活動","競賽","學習歷程","升學","行政","其他"];
+var state = { scope:"relevant", topic:"全部主題"};
+var topicRow = document.getElementById("topicRow");
+var cardsEl = document.getElementById("cards");
+var countEl = document.getElementById("countLine");
+var segRel = document.getElementById("segRel");
+var segAll = document.getElementById("segAll");
+
+topicRow.innerHTML = TOPICS.map(function(t){
+return '<button type="button" data-topic="' + t + '" aria-pressed="' + (t===state.topic) + '">' + t + '</button>';
+}).join("");
+
+function dlTag(item){
+if(!item.deadline) return "";
+var d = daysLeft(item.deadline);
+var u = urgency(d);
+var txt;
+if(d < 0) txt = item.deadline_label + " " + fmtDate(item.deadline) + "・已截止";
+else if(d === 0) txt = item.deadline_label + " " + fmtDate(item.deadline) + "・今天截止";
+else txt = item.deadline_label + " " + fmtDate(item.deadline) + "・剩 " + d + " 天";
+return '<span class="tag dl ' + u + '">' + esc(txt) + '</span>';
+}
+
+function render(){
+segRel.setAttribute("aria-pressed", state.scope==="relevant");
+segAll.setAttribute("aria-pressed", state.scope==="all");
+var btns = topicRow.querySelectorAll("button");
+for(var i=0;i<btns.length;i++){
+btns[i].setAttribute("aria-pressed", btns[i].getAttribute("data-topic")===state.topic);
+}
+var items = DATA.filter(function(x){
+if(state.scope==="relevant" &&!x.relevant) return false;
+if(state.topic!=="全部主題" && x.topic!==state.topic) return false;
+return true;
+});
+/* 有期限且未過期的排前面（近到遠），其餘維持原順序，已過期沉底 */
+var withIdx = items.map(function(x,i){ return {x:x,i:i};});
+withIdx.sort(function(a,b){
+var da = a.x.deadline? daysLeft(a.x.deadline): null;
+var db = b.x.deadline? daysLeft(b.x.deadline): null;
+var ga = da===null? 1: (da<0? 2: 0);
+var gb = db===null? 1: (db<0? 2: 0);
+if(ga!==gb) return ga-gb;
+if(ga===0 && da!==db) return da-db;
+return a.i-b.i;
+});
+countEl.textContent = "共 " + items.length + " 則" + (state.scope==="relevant"? "（高一相關）": "（全部公告）") + (state.topic!=="全部主題"? "・主題：" + state.topic: "");
+if(items.length===0){
+cardsEl.innerHTML = '<div class="glass empty">這個組合目前沒有公告，換個主題或切到「全部」看看。</div>';
+return;
+}
+cardsEl.innerHTML = withIdx.map(function(w){
+var x = w.x;
+var tags = '<span class="tag' + (x.topic==="學習歷程"? " topic-learning": "") + '">' + esc(x.topic) + (x.topic==="學習歷程"? " ★": "") + '</span>';
+if(x.relevant) tags += '<span class="tag rel">高一相關</span>';
+tags += dlTag(x);
+return '<a class="glass card" href="' + esc(x.url) + '" target="_blank" rel="noopener">' +
+'<span class="card-top" style="display:flex">' + tags + '</span>' +
+'<h3>' + esc(x.title) + '</h3>' +
+'<p>' + esc(x.summary) + '</p>' +
+'<span class="open">官網原文 →</span></a>';
+}).join("");
+}
+segRel.addEventListener("click", function(){ state.scope="relevant"; render();});
+segAll.addEventListener("click", function(){ state.scope="all"; render();});
+topicRow.addEventListener("click", function(e){
+var b = e.target.closest("button");
+if(!b) return;
+state.topic = b.getAttribute("data-topic");
+render();
+});
+render();
+</script>
+</body>
+</html>
