@@ -947,7 +947,7 @@ function brandHeader(extra) {
 }
 function needLoginHtml(what) {
   return brandHeader() + '<div class="card"><h3>先登入才能用' + esc(what) + '</h3>' +
-    '<p class="hint">用跟 Android 版一樣的帳號登入，資料、好友都會同步過來。</p>' +
+    '<p class="hint">登入後就能使用學習與社群功能，資料會跟著你的帳號同步。</p>' +
     '<button class="btn cta" onclick="go(\'me\')">去登入 / 註冊</button></div>';
 }
 function openModal(html) {
@@ -1079,11 +1079,26 @@ function renderAnnouncements() {
 }
 
 /* ============================== me / account ======================= */
+function copyText(t) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(t);
+  }
+  return new Promise(function (resolve, reject) {
+    var ta = document.createElement('textarea');
+    ta.value = t;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy') ? resolve() : reject(new Error('copy failed')); }
+    catch (e) { reject(e); }
+    document.body.removeChild(ta);
+  });
+}
 function viewMe(root) {
   if (!Auth.signedIn) {
     root.innerHTML = brandHeader() +
       '<div class="card"><h3 id="auth-title">登入</h3>' +
-      '<p class="hint">用跟 Android 版一樣的 email 帳號。第一次用請先註冊（同一個帳號，兩邊資料互通）。</p>' +
+      '<p class="hint">用你的 email 帳號登入。第一次用請先註冊，資料會跟著帳號同步。</p>' +
       '<label class="flabel">Email</label><input id="auth-email" type="email" autocomplete="email" placeholder="you@example.com">' +
       '<label class="flabel">密碼</label><input id="auth-pass" type="password" autocomplete="current-password" placeholder="至少 6 碼">' +
       '<div class="err" id="auth-err" style="margin-top:10px"></div>' +
@@ -1091,7 +1106,7 @@ function viewMe(root) {
       '<button class="btn cta" id="auth-go">登入</button>' +
       '<div style="height:10px"></div>' +
       '<button class="btn ghost block" id="auth-swap">還沒有帳號？改成註冊</button></div>' +
-      '<footer class="legal">登入後：公告、筆記、錯題、閃卡、專注紀錄會跟 Android 版同步；好友與一起讀書、訊息也互通。</footer>';
+      '<footer class="legal">登入後：公告、筆記、錯題、閃卡、專注紀錄都會跟著你的帳號同步；好友、一起讀書、訊息也都能使用。</footer>';
     var mode = 'in';
     $('#auth-swap').addEventListener('click', function () {
       mode = mode === 'in' ? 'up' : 'in';
@@ -1117,15 +1132,15 @@ function viewMe(root) {
   }
   var me = Auth.uid;
   root.innerHTML = brandHeader() +
-    '<div class="card"><h3>帳號</h3><div class="hint">目前登入：' + esc(Auth.email) + '</div>' +
-    '<div style="height:10px"></div><button class="btn ghost" id="signout">登出</button></div>' +
-    '<div class="card"><h3>我的公開檔案</h3>' +
-    '<p class="hint">別人看到的只有暱稱與好友代碼，不會看到你的 email。</p>' +
+    '<div class="card"><h3>帳號詳情</h3>' +
+    '<label class="flabel">登入 email</label><div style="font-size:16px">' + esc(Auth.email) + '</div>' +
+    '<p class="hint" style="margin-top:10px">別人看到的只有暱稱與好友代碼，不會看到你的 email。</p>' +
     '<label class="flabel">暱稱（公開顯示）</label><input id="nick" maxlength="20" value="' +
     esc(App.profile ? App.profile.nickname : nicknameSuggest(Auth.email)) + '">' +
     '<label class="flabel">我的好友代碼</label>' +
-    '<div class="serif" style="font-size:26px;letter-spacing:2px" id="mycode">' +
+    '<div class="rowline"><div class="serif grow" style="font-size:26px;letter-spacing:2px" id="mycode">' +
     (App.profile ? esc(friendCodeFormat(App.profile.friendCode)) : '（儲存暱稱後產生）') + '</div>' +
+    '<button class="btn peri" id="copy-code"' + (App.profile ? '' : ' disabled') + '>複製</button></div>' +
     '<div style="height:12px"></div><button class="btn peri block" id="save-nick">儲存暱稱</button>' +
     '<div class="err" id="nick-err"></div></div>' +
     '<div class="card"><h3>加好友</h3>' +
@@ -1135,21 +1150,28 @@ function viewMe(root) {
     '<div id="add-result" style="margin-top:10px"></div></div>' +
     '<div class="card"><h3>好友邀請</h3><div id="req-list"><span class="dim">載入中…</span></div></div>' +
     '<div class="card"><h3>好友</h3><div id="friend-list"><span class="dim">載入中…</span></div></div>' +
-    '<div class="card"><h3>AI 設定（網頁版）</h3>' +
-    '<p class="hint">自訂 API（OpenAI 相容）。Key 只存在這台裝置的瀏覽器裡，不會上傳到任何地方。</p>' +
+    '<div class="card"><h3>設定</h3>' +
+    '<p class="hint">AI 設定（自訂 API，OpenAI 相容）。Key 只存在這台裝置的瀏覽器裡，不會上傳到任何地方。</p>' +
     '<label class="flabel">Base URL</label><input id="ai-base">' +
     '<label class="flabel">模型</label><input id="ai-model">' +
     '<label class="flabel">API Key</label><input id="ai-key" type="password" autocomplete="off">' +
-    '<div style="height:12px"></div><button class="btn peri block" id="ai-save">儲存 AI 設定</button></div>' +
+    '<div style="height:12px"></div><button class="btn peri block" id="ai-save">儲存 AI 設定</button>' +
+    '<div style="height:16px"></div><button class="btn ghost block" id="signout">登出</button></div>' +
     '<div class="card sub"><h3>把 Study QAQ 加到主畫面</h3>' +
     '<p class="hint">iPhone：用 Safari 開這個頁面 → 點分享鈕 →「加入主畫面」，桌面就會出現 Study QAQ 圖示，點開跟 App 一樣全螢幕。</p></div>' +
     '<footer class="legal">貼圖：Noto Emoji（Google）— Apache License 2.0，來源 github.com/googlefonts/noto-emoji（網頁版使用同一套圖稿的 SVG 版本）。<br>' +
-    '公告資料來源：臺中市立惠文高中官網。本頁與 Android 版「Study QAQ」共用同一個 Firebase 專案與帳號系統。</footer>';
+    '公告資料來源：臺中市立惠文高中官網。登入的帳號與資料會在各裝置間同步。</footer>';
   $('#signout').addEventListener('click', function () {
     Auth.signOut();
     App.profile = null; App.friendships = []; App.threads = []; App.blocks = [];
     App.data = { notes: [], mistakes: [], flashcards: [], focus: [], studyDays: [] };
     renderTabbar(); go('home'); toast('已登出');
+  });
+  $('#copy-code').addEventListener('click', function () {
+    if (!App.profile) return;
+    copyText(friendCodeFormat(App.profile.friendCode)).then(function () {
+      toast('好友代碼已複製');
+    }).catch(function () { toast('複製失敗，請手動抄下代碼'); });
   });
   $('#save-nick').addEventListener('click', function () {
     var nick = nicknameValidate($('#nick').value);
@@ -1160,6 +1182,7 @@ function viewMe(root) {
     Social.ensureProfile(me, nick, Date.now()).then(function (p) {
       App.profile = p;
       $('#mycode').textContent = friendCodeFormat(p.friendCode);
+      var cb = $('#copy-code'); if (cb) cb.disabled = false;
       toast('暱稱已儲存');
     }).catch(function (e) { err.textContent = e.message; })
       .finally(function () { var b = $('#save-nick'); if (b) b.disabled = false; });
@@ -1348,7 +1371,7 @@ function renderLearnHub() {
   var mins = minutesOn(App.data.focus, today);
   body.innerHTML =
     '<div class="card"><h3>📖 今日複習</h3>' +
-    '<p class="hint">到期的閃卡 ' + dc + ' 張、錯題 ' + dm + ' 題（間隔複習排程跟 Android 版共用）。</p>' +
+    '<p class="hint">到期的閃卡 ' + dc + ' 張、錯題 ' + dm + ' 題（間隔複習排程跟著帳號同步）。</p>' +
     '<button class="btn cta" id="lh-review" ' + ((dc + dm) === 0 ? 'disabled' : '') + '>開始今日複習</button></div>' +
     '<div class="card"><h3>⏱ 專注計時</h3>' +
     '<p class="hint">今日已專注 ' + mins + ' 分鐘' + (streak > 0 ? ' ・ 🔥 連續學習 ' + streak + ' 天' : '') + '</p>' +
@@ -1362,7 +1385,7 @@ function renderLearnHub() {
     App.data.mistakes.filter(function (m) { return !m.mastered; }).length + ' 題</p>' +
     '<button class="btn peri block" id="lh-mistakes">管理錯題</button></div>' +
     '<div class="card"><h3>📒 筆記</h3>' +
-    '<p class="hint">共 ' + App.data.notes.length + ' 則（照片請在 Android 版看）</p>' +
+    '<p class="hint">共 ' + App.data.notes.length + ' 則（網頁版暫不顯示照片）</p>' +
     '<button class="btn peri block" id="lh-notes">管理筆記</button></div>' +
     '<div class="card"><h3>🤖 AI 學習</h3>' +
     '<p class="hint">用你在「我的」設定的自訂 API 問問題、整理重點。</p>' +
@@ -1414,7 +1437,7 @@ function runReviewSession(queue, title) {
       if (fb) fb.addEventListener('click', function () { flipped = true; render(); });
     } else {
       root.innerHTML = head + '<div class="card"><span class="pill line">' + esc(it.subject) + '</span>' +
-        (it.photoName ? ' <span class="pill line">📷 照片在 Android 版</span>' : '') +
+        (it.photoName ? ' <span class="pill line">📷 有照片（網頁版不顯示）</span>' : '') +
         '<div style="font-size:18px;line-height:1.55;margin-top:10px;white-space:pre-wrap">' + esc(it.question) + '</div>' +
         (it.myAnswer ? '<div class="dim" style="margin-top:10px">我的答案：' + esc(it.myAnswer) + '</div>' : '') +
         (flipped
@@ -1581,7 +1604,7 @@ function viewMistakes(root) {
         var photos = m.photoName ? m.photoName.split(',').filter(Boolean).length : 0;
         return '<div class="card sub"><div class="rowline"><span class="pill line">' + esc(m.subject) + '</span>' +
           (m.mastered ? '<span class="pill">已搞懂</span>' : '<span class="pill salmon">還沒搞懂</span>') +
-          (photos ? '<span class="pill line">📷 ×' + photos + '（Android 版看）</span>' : '') + '</div>' +
+          (photos ? '<span class="pill line">📷 照片 ×' + photos + '（網頁版暫不顯示照片）</span>' : '') + '</div>' +
           '<div style="font-size:16px;margin-top:8px;line-height:1.5" class="ellipsis">' + esc(m.question) + '</div>' +
           (m.cause || m.source ? '<div class="dim small" style="margin-top:4px">' +
             esc([m.cause, m.source].filter(Boolean).join(' ・ ')) + ' ・ 已複習 ' + (m.reviewCount || 0) + ' 次</div>' : '') +
@@ -1616,7 +1639,7 @@ function mistakeEditor(m, done) {
       return '<button data-s="' + esc(s) + '" class="' + (s === val ? 'on' : '') + '">' + (s === '' ? '不選' : esc(s)) + '</button>';
     }).join('') + '</div>';
   }
-  openModal(modalHead(isNew ? '新增錯題' : '編輯錯題', m.photoName ? '這題有照片，照片在 Android 版管理（這裡編輯不會動到照片）' : '') +
+  openModal(modalHead(isNew ? '新增錯題' : '編輯錯題', m.photoName ? '這題有照片，網頁版暫不顯示照片（這裡編輯不會動到照片）' : '') +
     '<label class="flabel">科目</label>' + chipRow('mk-subj', SUBJECTS, subject) +
     '<label class="flabel">題目</label><textarea id="mk-q" rows="3">' + esc(m.question) + '</textarea>' +
     '<label class="flabel">我的答案</label><textarea id="mk-my" rows="2">' + esc(m.myAnswer) + '</textarea>' +
@@ -1653,7 +1676,7 @@ function viewNotes(root) {
         var photos = n.photoName ? n.photoName.split(',').filter(Boolean).length : 0;
         return '<div class="card sub"><div class="rowline">' +
           (n.subject ? '<span class="pill line">' + esc(n.subject) + '</span>' : '') +
-          (photos ? '<span class="pill line">📷 ×' + photos + '（Android 版看）</span>' : '') +
+          (photos ? '<span class="pill line">📷 照片 ×' + photos + '（網頁版暫不顯示照片）</span>' : '') +
           '<span class="dim small">' + fmtDay(epochDayOf(n.updatedAt)) + ' ' + fmtTime(n.updatedAt) + '</span></div>' +
           '<div style="font-size:17px;font-weight:600;margin-top:8px">' + esc(noteDisplayTitle(n)) + '</div>' +
           (n.body ? '<div class="dim" style="margin-top:4px;line-height:1.5">' + esc(n.body.split('\n')[0].slice(0, 60)) + '</div>' : '') +
@@ -1680,7 +1703,7 @@ function noteEditor(n, done) {
   var isNew = !n;
   n = n || { id: newId(), title: '', body: '', subject: '', photoName: null, createdAt: Date.now(), updatedAt: Date.now() };
   var subject = n.subject;
-  openModal(modalHead(isNew ? '新增筆記' : '編輯筆記', n.photoName ? '這則有照片，照片在 Android 版管理' : '') +
+  openModal(modalHead(isNew ? '新增筆記' : '編輯筆記', n.photoName ? '這則有照片，網頁版暫不顯示照片' : '') +
     '<label class="flabel">標題（可空）</label><input id="nt-title" value="' + esc(n.title) + '">' +
     '<label class="flabel">科目</label>' + subjChipsHtml(subject, true) +
     '<label class="flabel">內文</label><textarea id="nt-body" rows="8">' + esc(n.body) + '</textarea>' +
