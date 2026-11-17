@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Study QAQ</title>
+<meta name="description" content="惠文高一公告・學習・一起讀書・好友私訊 — 與 Android 版共用帳號的網頁版">
+<meta name="theme-color" content="#171410">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Study QAQ">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app"></div>
+<nav id="tabbar" aria-label="主導覽"></nav>
+<div id="modal-root"></div>
+<div id="toast-root"></div>
+<script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () { /* offline shell unavailable */ });
+  });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+Sticker pack attribution
+========================
+
+Images: Google Noto Emoji (PNG, 128x128), 48 images.
+Source: https://github.com/googlefonts/noto-emoji
+Files: 2D/png/128/emoji_u<code>.png in that repository.
+
+Licensing (per the repository README, "License" section):
+- "Tools and most image resources are under the Apache license,
+  version 2.0."  -> the PNG images bundled here are Apache 2.0.
+- "Emoji fonts (under the fonts subdirectory) are under the
+  SIL Open Font License, version 1.1." -> no font files are bundled
+  in this app; the repository's LICENSE text (OFL 1.1) is kept
+  alongside as LICENSE.txt for completeness.
+
+Copyright 2013 Google LLC.
