@@ -241,6 +241,465 @@ function parseBlocks(text) {
 function writeBlocks(entries) {
   return entries.map(function (e) { return e.uid + '\t' + e.nickname; }).join('\n');
 }
+
+/* ============================== photos (Firestore docs) ============
+   Byte-compatible with the Android photo sync (v3.0+): one doc per
+   photo at users/{uid}/photos/{docId}, docId = {feature}__{safeName}
+   where safeName keeps only [A-Za-z0-9._-] and maps everything else
+   to '_' (Android PhotoDocIds). Fields: name (string), data (base64
+   of the cloud copy), size (integer, cloud-copy bytes), updatedAt
+   (integer ms) — the Android FirestoreClient.buildPhotoDocBody shape.
+   The cloud copy is a recompressed JPEG: long edge ≤1280 at q75, one
+   retry at 960/q65 when its base64 would exceed 900,000 chars (the
+   Firestore 1 MiB document cap) — Android PhotoCompressPolicy.
+   Entries reference photos by file name inside the payload's photo
+   field: names joined with ',' (Android PhotoList, cap 20 per
+   entry); a single photo serializes as its plain name, no photos as
+   the empty field. Web-generated names use the Android shape
+   <entryId>_<millis>_<seq>.jpg. */
+var PHOTO_MAX_PER_ENTRY = 20;
+var PHOTO_BASE64_CAP = 900000;
+var PHOTO_COMPRESS_STEPS = [[1280, 75], [960, 65]];
+
+function photoNamesOf(raw) {
+  if (!raw) return [];
+  return String(raw).split(',').filter(function (s) { return s.length > 0; });
+}
+function photoFieldOf(names) {
+  var clean = (names || []).filter(function (n) {
+    return n && n.indexOf(',') < 0 && n.indexOf('\t') < 0 && n.indexOf('\n') < 0;
+  }).slice(0, PHOTO_MAX_PER_ENTRY);
+  return clean.length ? clean.join(',') : null;
+}
+function photoSafeName(name) {
+  var s = String(name == null ? '' : name), out = '';
+  for (var i = 0; i < s.length; i++) {
+    var ch = s.charAt(i);
+    out += /[A-Za-z0-9._-]/.test(ch) ? ch : '_';
+  }
+  return (!out || out === '.' || out === '..') ? 'photo' : out;
+}
+function photoDocId(feature, name) { return feature + '__' + photoSafeName(name); }
+function photoDocPath(feature, name) {
+  return 'users/' + Auth.uid + '/photos/' + photoDocId(feature, name);
+}
+function b64ToBytes(b64) {
+  var bin = atob(b64), out = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function b64ToBlob(b64, type) {
+  return new Blob([b64ToBytes(b64)], { type: type || 'application/octet-stream' });
+}
+function bytesToB64(bytes) {
+  var bin = '';
+  for (var i = 0; i < bytes.length; i += 0x8000) {
+    bin += String.fromCharCode.apply(null,
+      bytes.subarray(i, Math.min(i + 0x8000, bytes.length)));
+  }
+  return btoa(bin);
+}
+function blobToB64(blob) {
+  return blob.arrayBuffer().then(function (buf) { return bytesToB64(new Uint8Array(buf)); });
+}
+/* In-memory cache of fetched photo docs (docId -> {name, b64, size,
+   updatedAt}); photos are immutable per name, so no invalidation is
+   needed beyond put/remove updating the entry themselves. */
+var PhotoStore = {
+  cache: {},
+  get: function (feature, name) {
+    var docId = photoDocId(feature, name);
+    if (this.cache[docId]) return Promise.resolve(this.cache[docId]);
+    var self = this;
+    return FS.getDoc(photoDocPath(feature, name)).then(function (f) {
+      if (!f || typeof f.data !== 'string' || !f.data) return null;
+      var rec = {
+        name: typeof f.name === 'string' && f.name ? f.name : name,
+        b64: f.data, size: f.size || 0, updatedAt: f.updatedAt || 0
+      };
+      self.cache[docId] = rec;
+      return rec;
+    }).catch(function () { return null; });
+  },
+  dataUrl: function (rec) { return 'data:image/jpeg;base64,' + rec.b64; },
+  blob: function (rec) { return b64ToBlob(rec.b64, 'image/jpeg'); },
+  put: function (feature, name, b64, size) {
+    var now = Date.now(), self = this;
+    return FS.patchDoc(photoDocPath(feature, name),
+      { name: name, data: b64, size: size, updatedAt: now }, null)
+      .then(function () {
+        self.cache[photoDocId(feature, name)] =
+          { name: name, b64: b64, size: size, updatedAt: now };
+      });
+  },
+  remove: function (feature, name) {
+    delete this.cache[photoDocId(feature, name)];
+    return FS.deleteDoc(photoDocPath(feature, name)).catch(function () {});
+  }
+};
+/* Android AiImagePolicy.scaledSize: shrink so the long edge is at
+   most maxEdge; never upscale. */
+function scaledSizeJs(width, height, maxEdge) {
+  if (width <= 0 || height <= 0) return [width, height];
+  var le = Math.max(width, height);
+  if (le <= maxEdge) return [width, height];
+  var r = maxEdge / le;
+  return [Math.max(1, Math.round(width * r)), Math.max(1, Math.round(height * r))];
+}
+function loadImageViaTag(blob) {
+  return new Promise(function (resolve, reject) {
+    var url = URL.createObjectURL(blob);
+    var img = new Image();
+    img.onload = function () {
+      resolve({
+        draw: img, width: img.naturalWidth, height: img.naturalHeight,
+        close: function () { URL.revokeObjectURL(url); }
+      });
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('照片讀取失敗')); };
+    img.src = url;
+  });
+}
+function loadImageSource(blob) {
+  if (window.createImageBitmap) {
+    return createImageBitmap(blob, { imageOrientation: 'from-image' })
+      .then(function (bmp) {
+        return {
+          draw: bmp, width: bmp.width, height: bmp.height,
+          close: function () { bmp.close(); }
+        };
+      }).catch(function () { return loadImageViaTag(blob); });
+  }
+  return loadImageViaTag(blob);
+}
+function encodeJpeg(blob, maxEdge, quality) {
+  return loadImageSource(blob).then(function (src) {
+    var size = scaledSizeJs(src.width, src.height, maxEdge);
+    var canvas = document.createElement('canvas');
+    canvas.width = size[0]; canvas.height = size[1];
+    canvas.getContext('2d').drawImage(src.draw, 0, 0, size[0], size[1]);
+    src.close();
+    return new Promise(function (resolve, reject) {
+      if (canvas.toBlob) {
+        canvas.toBlob(function (b) {
+          if (b) resolve(b); else reject(new Error('照片處理失敗'));
+        }, 'image/jpeg', quality / 100);
+      } else {
+        resolve(b64ToBlob(canvas.toDataURL('image/jpeg', quality / 100).split(',')[1],
+          'image/jpeg'));
+      }
+    });
+  });
+}
+function b64CharCount(byteSize) { return Math.ceil(byteSize / 3) * 4; }
+/* Android PhotoCompressPolicy: the first step whose base64 fits the
+   cap wins; null when even the last step stays too big (the photo is
+   skipped, as on Android). */
+function compressPhotoCopy(file) {
+  var stepIdx = 0;
+  function attempt() {
+    var step = PHOTO_COMPRESS_STEPS[stepIdx];
+    return encodeJpeg(file, step[0], step[1]).then(function (blob) {
+      return blobToB64(blob).then(function (b64) {
+        if (b64CharCount(blob.size) <= PHOTO_BASE64_CAP) {
+          return { blob: blob, b64: b64, size: blob.size };
+        }
+        stepIdx++;
+        return stepIdx < PHOTO_COMPRESS_STEPS.length ? attempt() : null;
+      });
+    });
+  }
+  return attempt();
+}
+/* Android AiImagePolicy.planFor: few photos keep the larger size,
+   5+ shrink so the total request payload stays reasonable. */
+function aiPlanFor(count) {
+  return count <= 4 ? { maxEdge: 1600, quality: 80 } : { maxEdge: 1024, quality: 70 };
+}
+/* Prepares an entry's photos for one AI call, in display order. The
+   web's source bytes are the cloud copies (already ≤1280px), where
+   Android starts from the phone's originals — the request shape is
+   identical either way. */
+function prepareAiImages(feature, names) {
+  var plan = aiPlanFor(names.length);
+  return Promise.all(names.map(function (name) {
+    return PhotoStore.get(feature, name).then(function (rec) {
+      if (!rec) throw new Error('有一張照片讀不到，請再試一次');
+      return encodeJpeg(PhotoStore.blob(rec), plan.maxEdge, plan.quality)
+        .then(blobToB64);
+    });
+  }));
+}
+
+/* ============================== AI prompts & calls =================
+   The prompts are byte-identical copies of Android AiPrompts
+   (NOTE_PROMPT / MISTAKE_PROMPT); the request body mirrors Android
+   OpenAiCompatClient.buildRequestJson: the study-guard system
+   message first, then one user message whose content is a parts
+   array — the prompt text, then one image_url data-URI part per
+   photo, in order. Text-only requests use the same one-part shape. */
+var NOTE_PROMPT = '你是學習助理。請把這份內容（照片或文字）整理成繁體中文筆記，嚴格照下面格式輸出，不要加開場白、結尾或格式以外的文字：\n【摘要】\n用 3–5 句話講完整份內容在說什麼，120 字以內，不要條列。\n【重點】\n最多 7 條，每條一行、以「・」開頭、每條 30 字以內，只留核心觀念、公式、定義與年份；不要寫例子、不要逐句抄原文、不要客套話；內容太多時合併條目，不可以超過 7 條。';
+var MISTAKE_PROMPT = '請看這張題目照片，用繁體中文說明，不要客套話，嚴格照下面三段輸出，每條以 30 字以內為原則：\n【觀念】\n最多 2 條，先講這題在考什麼觀念。\n【解法步驟】\n最多 5 行短句，條列正確的解法步驟。\n【易錯點】\n最多 3 條，列出最容易錯的地方。';
+function buildAiRequestBody(model, prompt, imagesB64) {
+  var content = [{ type: 'text', text: prompt }];
+  (imagesB64 || []).forEach(function (b64) {
+    content.push({
+      type: 'image_url',
+      image_url: { url: 'data:image/jpeg;base64,' + b64 }
+    });
+  });
+  return {
+    model: model,
+    messages: [
+      { role: 'system', content: AI_SYSTEM_PROMPT },
+      { role: 'user', content: content }
+    ]
+  };
+}
+/* Android OpenAiCompatClient.httpError wording: plain reason +
+   （錯誤代碼 N） + the server's own short hint. */
+function aiHttpErrorMessage(status, serverMsg) {
+  var reason;
+  if (status === 400) reason = '請求格式有問題';
+  else if (status === 401) reason = 'Key 被拒絕了，請檢查 Key 有沒有貼對';
+  else if (status === 402) reason = '餘額不足，要先在這個服務儲值才能用';
+  else if (status === 429) reason = '請求太頻繁或額度受限，晚點再試';
+  else if (status === 404) reason = '找不到這個 AI 模型';
+  else if (status >= 500 && status <= 599) reason = 'AI 伺服器暫時出問題';
+  else reason = 'AI 回應怪怪的，請再試一次';
+  var detail = reason + '（錯誤代碼 ' + status + '）';
+  var hint = String(serverMsg || '').trim().replace(/\n/g, ' ').slice(0, 80);
+  if (hint) detail += ' ' + hint;
+  return detail;
+}
+function aiTypedError(msg) { var e = new Error(msg); e.aiTyped = true; return e; }
+/* One chat-completions call with the account's effective settings.
+   Mirrors the Android client: a 5xx answer is retried once after a
+   pause; failures reject with the plain-language Android wording;
+   the API key is stripped if it ever echoes back in an error. */
+function aiChat(prompt, imagesB64) {
+  var ai = loadAiSettings();
+  if (!ai.key) return Promise.reject(aiTypedError('這個帳號還沒有 AI 設定'));
+  var body = JSON.stringify(buildAiRequestBody(ai.model, prompt, imagesB64));
+  function attempt(n) {
+    return fetch(aiEndpoint(ai.baseUrl), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + ai.key },
+      body: body
+    }).then(function (r) {
+      return r.json().catch(function () { return null; }).then(function (data) {
+        if (!r.ok) {
+          if (r.status >= 500 && r.status <= 599 && n < 2) {
+            return new Promise(function (res) { setTimeout(res, 2000); })
+              .then(function () { return attempt(n + 1); });
+          }
+          var msg = data && data.error && data.error.message ? data.error.message : '';
+          var text = aiHttpErrorMessage(r.status, msg);
+          if (text.indexOf(ai.key) >= 0) text = 'AI 回應怪怪的，請再試一次';
+          throw aiTypedError(text);
+        }
+        if (data && data.error) throw aiTypedError('AI 回應怪怪的，請再試一次');
+        var text2 = data && data.choices && data.choices[0] && data.choices[0].message
+          ? String(data.choices[0].message.content || '').trim() : '';
+        if (!text2) throw aiTypedError('AI 沒有回傳內容，再試一次');
+        return text2;
+      });
+    }).catch(function (e) {
+      if (e && e.aiTyped) throw e;
+      throw aiTypedError('網路連不上，請檢查連線後再試一次');
+    });
+  }
+  return attempt(1);
+}
+
+/* ============================== photo UI ========================== */
+/* Thumbnail strip for list cards & review: up to maxShow photos of
+   an entry; tapping one opens the viewer with the entry's full set. */
+function photoStripHtml(feature, entry, maxShow) {
+  var names = photoNamesOf(entry.photoName);
+  if (!names.length) return '';
+  var show = names.slice(0, maxShow || 3);
+  var html = '<div class="photostrip" style="margin-top:10px">' + show.map(function (n, i) {
+    return '<img class="phthumb sm" data-phname="' + esc(n) + '" data-phfeat="' + feature +
+      '" data-phentry="' + entry.id + '" data-phidx="' + i + '" alt="照片">';
+  }).join('');
+  if (names.length > show.length) {
+    html += '<span class="dim small">＋' + (names.length - show.length) + ' 張</span>';
+  }
+  return html + '</div>';
+}
+function hydrateThumbs(container, onTap) {
+  Array.prototype.forEach.call(container.querySelectorAll('img[data-phname]'), function (img) {
+    var feature = img.getAttribute('data-phfeat');
+    var name = img.getAttribute('data-phname');
+    PhotoStore.get(feature, name).then(function (rec) {
+      if (rec) img.src = PhotoStore.dataUrl(rec);
+    });
+    if (onTap) {
+      img.addEventListener('click', function () { onTap(img); });
+    }
+  });
+}
+function wirePhotoThumbs(rootEl) {
+  hydrateThumbs(rootEl, function (img) {
+    var feature = img.getAttribute('data-phfeat');
+    var entryId = +img.getAttribute('data-phentry');
+    var list = feature === 'notes' ? App.data.notes : App.data.mistakes;
+    var entry = list.find(function (x) { return x.id === entryId; });
+    if (entry) {
+      openPhotoViewer(feature, photoNamesOf(entry.photoName),
+        +img.getAttribute('data-phidx'));
+    }
+  });
+}
+/* Full-screen viewer with prev/next, mirroring Android PhotoViewer
+   (「第 n 張／共 N 張」). Lives outside #modal-root so it can open
+   over an editor modal without disturbing it. */
+function openPhotoViewer(feature, names, index) {
+  closePhotoViewer();
+  if (!names.length) return;
+  var idx = Math.min(Math.max(index || 0, 0), names.length - 1);
+  var ov = document.createElement('div');
+  ov.className = 'photoviewer'; ov.id = 'photoviewer';
+  ov.innerHTML = '<div class="pvbar"><span id="pv-count"></span>' +
+    '<button class="btn ghost small" id="pv-close">✕</button></div>' +
+    '<img id="pv-img" alt="照片">' +
+    '<div class="pvnav"><button class="btn ghost" id="pv-prev">‹ 上一張</button>' +
+    '<button class="btn ghost" id="pv-next">下一張 ›</button></div>';
+  document.body.appendChild(ov);
+  function show() {
+    $('#pv-count', ov).textContent = '第 ' + (idx + 1) + ' 張 / 共 ' + names.length + ' 張';
+    $('#pv-prev', ov).disabled = idx <= 0;
+    $('#pv-next', ov).disabled = idx >= names.length - 1;
+    var img = $('#pv-img', ov);
+    img.removeAttribute('src');
+    PhotoStore.get(feature, names[idx]).then(function (rec) {
+      if (rec && document.body.contains(ov)) img.src = PhotoStore.dataUrl(rec);
+    });
+  }
+  $('#pv-close', ov).addEventListener('click', closePhotoViewer);
+  ov.addEventListener('click', function (e) { if (e.target === ov) closePhotoViewer(); });
+  $('#pv-prev', ov).addEventListener('click', function () { if (idx > 0) { idx--; show(); } });
+  $('#pv-next', ov).addEventListener('click', function () {
+    if (idx < names.length - 1) { idx++; show(); }
+  });
+  show();
+}
+function closePhotoViewer() {
+  var ov = document.getElementById('photoviewer');
+  if (ov) ov.remove();
+}
+/* The AI-result placement choice (Android AppDialog.choose over the
+   editor): resolves 'append' / 'replace' / null (cancelled). Also an
+   overlay outside #modal-root so the editor underneath survives. */
+function chooseAiApply(title, message, replaceLabel) {
+  return new Promise(function (resolve) {
+    var ov = document.createElement('div');
+    ov.className = 'modal overlay2';
+    ov.innerHTML = '<div class="sheet"><h3>' + esc(title) + '</h3>' +
+      '<p class="hint">' + esc(message) + '</p><div style="height:14px"></div>' +
+      '<button class="btn cta" id="ac-append">加在後面</button><div style="height:10px"></div>' +
+      '<button class="btn peri block" id="ac-replace">' + esc(replaceLabel) + '</button>' +
+      '<div style="height:10px"></div>' +
+      '<button class="btn ghost block" id="ac-cancel">取消</button></div>';
+    document.body.appendChild(ov);
+    function done(v) { ov.remove(); resolve(v); }
+    $('#ac-append', ov).addEventListener('click', function () { done('append'); });
+    $('#ac-replace', ov).addEventListener('click', function () { done('replace'); });
+    $('#ac-cancel', ov).addEventListener('click', function () { done(null); });
+    ov.addEventListener('click', function (e) { if (e.target === ov) done(null); });
+  });
+}
+/* The editor photo working set. Photos picked in the editor upload
+   to the cloud at once (like the Android editor copies the file in
+   immediately); removals of pre-existing photos only delete their
+   cloud docs when the entry is saved (commit). Closing the modal
+   without saving deletes the session's uploads again (rollback), so
+   no unreferenced doc is left behind. */
+var photoNameSeq = 0;
+function editorPhotos(feature, entry) {
+  var state = {
+    names: photoNamesOf(entry.photoName),
+    added: [], removed: [], busy: false
+  };
+  function html() {
+    return '<label class="flabel">照片（' + state.names.length + '/' +
+      PHOTO_MAX_PER_ENTRY + '）</label>' +
+      '<div class="photostrip">' + state.names.map(function (n, i) {
+        return '<div class="phcell"><img class="phthumb" data-phname="' + esc(n) +
+          '" data-phfeat="' + feature + '" data-phidx="' + i + '" alt="照片">' +
+          '<button class="phx" data-phrm="' + i + '" aria-label="移除照片">✕</button></div>';
+      }).join('') +
+      (state.names.length < PHOTO_MAX_PER_ENTRY
+        ? '<button class="phadd" id="ph-add">' + (state.busy ? '上傳中…' : '＋ 加照片') + '</button>'
+        : '') +
+      '</div>' +
+      '<input type="file" id="ph-file" accept="image/*" multiple style="display:none">' +
+      '<div class="dim small" style="margin-top:6px">點照片看大圖；照片會存到你的雲端帳號。</div>';
+  }
+  function render(container) {
+    container.innerHTML = html();
+    hydrateThumbs(container, function (img) {
+      openPhotoViewer(feature, state.names.slice(), +img.getAttribute('data-phidx'));
+    });
+    Array.prototype.forEach.call(container.querySelectorAll('[data-phrm]'), function (b) {
+      b.addEventListener('click', function () {
+        var i = +b.getAttribute('data-phrm');
+        var name = state.names[i];
+        state.names.splice(i, 1);
+        var ai = state.added.indexOf(name);
+        if (ai >= 0) { state.added.splice(ai, 1); PhotoStore.remove(feature, name); }
+        else state.removed.push(name);
+        render(container);
+      });
+    });
+    var add = $('#ph-add', container), file = $('#ph-file', container);
+    if (add && file) {
+      add.addEventListener('click', function () { file.click(); });
+      file.addEventListener('change', function () {
+        var files = Array.prototype.slice.call(file.files || []);
+        file.value = '';
+        if (!files.length) return;
+        var room = PHOTO_MAX_PER_ENTRY - state.names.length;
+        var taken = files.slice(0, room);
+        if (files.length > taken.length) {
+          toast('每則最多 ' + PHOTO_MAX_PER_ENTRY + ' 張，只加了前 ' + taken.length + ' 張');
+        }
+        if (!taken.length) return;
+        state.busy = true; render(container);
+        var chain = Promise.resolve(), failed = 0;
+        taken.forEach(function (f) {
+          chain = chain.then(function () {
+            return compressPhotoCopy(f).then(function (res) {
+              if (!res) { failed++; return; }
+              var name = entry.id + '_' + Date.now() + '_' + (photoNameSeq++) + '.jpg';
+              return PhotoStore.put(feature, name, res.b64, res.size).then(function () {
+                state.names.push(name); state.added.push(name);
+              }).catch(function () { failed++; });
+            }).catch(function () { failed++; });
+          });
+        });
+        chain.then(function () {
+          state.busy = false;
+          if (failed > 0) toast('有 ' + failed + ' 張照片上傳失敗，其他已加入');
+          render(container);
+        });
+      });
+    }
+  }
+  return {
+    state: state,
+    render: render,
+    commit: function () {
+      state.removed.forEach(function (n) { PhotoStore.remove(feature, n); });
+      state.removed = []; state.added = [];
+    },
+    rollback: function () {
+      state.added.forEach(function (n) { PhotoStore.remove(feature, n); });
+      state.added = [];
+    }
+  };
+}
 function noteDisplayTitle(n) {
   if (n.title) return n.title;
   var lines = n.body.split('\n').map(function (s) { return s.trim(); })
@@ -951,13 +1410,23 @@ function needLoginHtml(what) {
     '<p class="hint">登入後就能使用學習與社群功能，資料會跟著你的帳號同步。</p>' +
     '<button class="btn cta" onclick="go(\'me\')">去登入 / 註冊</button></div>';
 }
+/* Set by editors that need cleanup when the modal closes without
+   saving (photo editors roll back their session uploads). Cleared by
+   the editor itself once it has saved. */
+var ModalOnClose = null;
 function openModal(html) {
   $('#modal-root').innerHTML = '<div class="modal"><div class="sheet">' + html + '</div></div>';
   $('.modal').addEventListener('click', function (e) {
     if (e.target === this) closeModal();
   });
 }
-function closeModal() { $('#modal-root').innerHTML = ''; }
+function closeModal() {
+  $('#modal-root').innerHTML = '';
+  if (ModalOnClose) {
+    var f = ModalOnClose; ModalOnClose = null;
+    try { f(); } catch (e) { /* cleanup is best-effort */ }
+  }
+}
 function modalHead(title, sub) {
   return '<div class="rowline"><div class="grow"><h3>' + esc(title) + '</h3>' +
     (sub ? '<div class="dim small">' + esc(sub) + '</div>' : '') + '</div>' +
@@ -1486,7 +1955,7 @@ function renderLearnHub() {
     App.data.mistakes.filter(function (m) { return !m.mastered; }).length + ' 題</p>' +
     '<button class="btn peri block" id="lh-mistakes">管理錯題</button></div>' +
     '<div class="card"><h3>📒 筆記</h3>' +
-    '<p class="hint">共 ' + App.data.notes.length + ' 則（網頁版暫不顯示照片）</p>' +
+    '<p class="hint">共 ' + App.data.notes.length + ' 則</p>' +
     '<button class="btn peri block" id="lh-notes">管理筆記</button></div>' +
     '<div class="card"><h3>🤖 AI 學習</h3>' +
     '<p class="hint">用 AI 問問題、整理重點，設定會跟著你的帳號自動帶入。</p>' +
@@ -1538,7 +2007,7 @@ function runReviewSession(queue, title) {
       if (fb) fb.addEventListener('click', function () { flipped = true; render(); });
     } else {
       root.innerHTML = head + '<div class="card"><span class="pill line">' + esc(it.subject) + '</span>' +
-        (it.photoName ? ' <span class="pill line">📷 有照片（網頁版不顯示）</span>' : '') +
+        photoStripHtml('mistakes', it, 3) +
         '<div style="font-size:18px;line-height:1.55;margin-top:10px;white-space:pre-wrap">' + esc(it.question) + '</div>' +
         (it.myAnswer ? '<div class="dim" style="margin-top:10px">我的答案：' + esc(it.myAnswer) + '</div>' : '') +
         (flipped
@@ -1548,6 +2017,7 @@ function runReviewSession(queue, title) {
           : '<button class="btn cta" style="margin-top:14px" id="rv-flip">看答案</button>') + '</div>';
       var fb2 = $('#rv-flip');
       if (fb2) fb2.addEventListener('click', function () { flipped = true; render(); });
+      wirePhotoThumbs(root);
     }
     Array.prototype.forEach.call(root.querySelectorAll('[data-g]'), function (b) {
       b.addEventListener('click', function () {
@@ -1702,11 +2172,12 @@ function viewMistakes(root) {
       '<div style="height:12px"></div>' +
       (items.length ? '' : '<div class="card sub"><span class="dim">沒有符合的錯題</span></div>') +
       items.map(function (m) {
-        var photos = m.photoName ? m.photoName.split(',').filter(Boolean).length : 0;
+        var photos = photoNamesOf(m.photoName).length;
         return '<div class="card sub"><div class="rowline"><span class="pill line">' + esc(m.subject) + '</span>' +
           (m.mastered ? '<span class="pill">已搞懂</span>' : '<span class="pill salmon">還沒搞懂</span>') +
-          (photos ? '<span class="pill line">📷 照片 ×' + photos + '（網頁版暫不顯示照片）</span>' : '') + '</div>' +
+          (photos ? '<span class="pill line">📷 照片 ×' + photos + '</span>' : '') + '</div>' +
           '<div style="font-size:16px;margin-top:8px;line-height:1.5" class="ellipsis">' + esc(m.question) + '</div>' +
+          photoStripHtml('mistakes', m, 3) +
           (m.cause || m.source ? '<div class="dim small" style="margin-top:4px">' +
             esc([m.cause, m.source].filter(Boolean).join(' ・ ')) + ' ・ 已複習 ' + (m.reviewCount || 0) + ' 次</div>' : '') +
           '<div class="rowline" style="margin-top:10px"><button class="btn ghost small" data-edit="' + m.id + '">編輯</button>' +
@@ -1724,10 +2195,17 @@ function viewMistakes(root) {
     Array.prototype.forEach.call(root.querySelectorAll('[data-del]'), function (b) {
       b.addEventListener('click', function () {
         var id = +b.getAttribute('data-del');
+        var victim = App.data.mistakes.find(function (x) { return x.id === id; });
         App.data.mistakes = App.data.mistakes.filter(function (x) { return x.id !== id; });
         saveFeature('mistakes', writeMistakes(App.data.mistakes)).then(render);
+        if (victim) {
+          photoNamesOf(victim.photoName).forEach(function (n) {
+            PhotoStore.remove('mistakes', n);
+          });
+        }
       });
     });
+    wirePhotoThumbs(root);
   }
   render();
 }
@@ -1740,28 +2218,62 @@ function mistakeEditor(m, done) {
       return '<button data-s="' + esc(s) + '" class="' + (s === val ? 'on' : '') + '">' + (s === '' ? '不選' : esc(s)) + '</button>';
     }).join('') + '</div>';
   }
-  openModal(modalHead(isNew ? '新增錯題' : '編輯錯題', m.photoName ? '這題有照片，網頁版暫不顯示照片（這裡編輯不會動到照片）' : '') +
+  var ph = editorPhotos('mistakes', m);
+  openModal(modalHead(isNew ? '新增錯題' : '編輯錯題', '') +
     '<label class="flabel">科目</label>' + chipRow('mk-subj', SUBJECTS, subject) +
     '<label class="flabel">題目</label><textarea id="mk-q" rows="3">' + esc(m.question) + '</textarea>' +
     '<label class="flabel">我的答案</label><textarea id="mk-my" rows="2">' + esc(m.myAnswer) + '</textarea>' +
     '<label class="flabel">正確答案</label><textarea id="mk-ca" rows="2">' + esc(m.correctAnswer) + '</textarea>' +
     '<label class="flabel">解析 / 備註</label><textarea id="mk-note" rows="2">' + esc(m.note) + '</textarea>' +
+    '<div id="ph-wrap"></div>' +
     '<label class="flabel">錯因</label>' + chipRow('mk-cause', [''].concat(CAUSES), cause) +
     '<label class="flabel">來源</label>' + chipRow('mk-source', [''].concat(SOURCES), source) +
     '<label class="rowline" style="gap:8px;margin-top:14px"><input type="checkbox" id="mk-mast" style="width:auto" ' + (m.mastered ? 'checked' : '') + '> 已搞懂</label>' +
-    '<div style="height:16px"></div><button class="btn cta" id="mk-save">儲存</button>');
+    '<div style="height:16px"></div><button class="btn peri block" id="mk-ai">AI 解題重點</button>' +
+    '<div style="height:10px"></div><button class="btn cta" id="mk-save">儲存</button>');
+  ModalOnClose = function () { ph.rollback(); };
+  ph.render($('#ph-wrap'));
   wireSubjChips($('#mk-subj'), function (s) { subject = s; });
   wireSubjChips($('#mk-cause'), function (s) { cause = s; });
   wireSubjChips($('#mk-source'), function (s) { source = s; });
+  function setAiBusy(busy) {
+    var a = $('#mk-ai'), s = $('#mk-save');
+    if (a) { a.disabled = busy; a.textContent = busy ? 'AI 整理中…' : 'AI 解題重點'; }
+    if (s) s.disabled = busy;
+  }
+  $('#mk-ai').addEventListener('click', function () {
+    var photos = ph.state.names.slice();
+    if (!photos.length) { toast('先附上題目照片，才能用 AI 解題重點'); return; }
+    if (!loadAiSettings().key) { toast('這個帳號還沒有 AI 設定'); return; }
+    setAiBusy(true);
+    prepareAiImages('mistakes', photos).then(function (imgs) {
+      return aiChat(MISTAKE_PROMPT, imgs);
+    }).then(function (reply) {
+      setAiBusy(false);
+      var cur = $('#mk-note').value;
+      if (!cur.trim()) { $('#mk-note').value = reply; toast('AI 整理完成'); return; }
+      chooseAiApply('AI 解題重點好了', '解析欄位已經有文字，要怎麼放這次的結果？', '取代解析')
+        .then(function (pick) {
+          if (pick === 'append') $('#mk-note').value = cur.replace(/\s+$/, '') + '\n\n' + reply;
+          else if (pick === 'replace') $('#mk-note').value = reply;
+        });
+    }).catch(function (e) {
+      setAiBusy(false);
+      toast(e.message || 'AI 整理失敗，請再試一次');
+    });
+  });
   $('#mk-save').addEventListener('click', function () {
+    if (ph.state.busy) { toast('照片上傳中，等一下再儲存'); return; }
     var q = $('#mk-q').value.trim(), ca = $('#mk-ca').value.trim();
-    if (!q && !m.photoName) { toast('題目或照片至少要有一項'); return; }
+    if (!q && !ph.state.names.length) { toast('題目或照片至少要有一項'); return; }
     if (!ca) { toast('正確答案必填'); return; }
     m.subject = subject; m.question = q; m.myAnswer = $('#mk-my').value;
     m.correctAnswer = ca; m.note = $('#mk-note').value;
     m.cause = cause; m.source = source; m.mastered = $('#mk-mast').checked;
+    m.photoName = photoFieldOf(ph.state.names);
     if (isNew) App.data.mistakes.push(m);
     saveFeature('mistakes', writeMistakes(App.data.mistakes)).then(function () {
+      ph.commit(); ModalOnClose = null;
       closeModal(); toast('已儲存'); done();
     });
   });
@@ -1774,13 +2286,14 @@ function viewNotes(root) {
       '<button class="btn cta" id="nt-add">＋ 新增筆記</button><div style="height:12px"></div>' +
       (items.length ? '' : '<div class="card sub"><span class="dim">還沒有筆記</span></div>') +
       items.map(function (n) {
-        var photos = n.photoName ? n.photoName.split(',').filter(Boolean).length : 0;
+        var photos = photoNamesOf(n.photoName).length;
         return '<div class="card sub"><div class="rowline">' +
           (n.subject ? '<span class="pill line">' + esc(n.subject) + '</span>' : '') +
-          (photos ? '<span class="pill line">📷 照片 ×' + photos + '（網頁版暫不顯示照片）</span>' : '') +
+          (photos ? '<span class="pill line">📷 照片 ×' + photos + '</span>' : '') +
           '<span class="dim small">' + fmtDay(epochDayOf(n.updatedAt)) + ' ' + fmtTime(n.updatedAt) + '</span></div>' +
           '<div style="font-size:17px;font-weight:600;margin-top:8px">' + esc(noteDisplayTitle(n)) + '</div>' +
           (n.body ? '<div class="dim" style="margin-top:4px;line-height:1.5">' + esc(n.body.split('\n')[0].slice(0, 60)) + '</div>' : '') +
+          photoStripHtml('notes', n, 3) +
           '<div class="rowline" style="margin-top:10px"><button class="btn ghost small" data-edit="' + n.id + '">編輯</button>' +
           '<button class="btn ghost small" data-del="' + n.id + '">刪除</button></div></div>';
       }).join('');
@@ -1793,10 +2306,17 @@ function viewNotes(root) {
     Array.prototype.forEach.call(root.querySelectorAll('[data-del]'), function (b) {
       b.addEventListener('click', function () {
         var id = +b.getAttribute('data-del');
+        var victim = App.data.notes.find(function (x) { return x.id === id; });
         App.data.notes = App.data.notes.filter(function (x) { return x.id !== id; });
         saveFeature('notes', writeNotes(App.data.notes)).then(render);
+        if (victim) {
+          photoNamesOf(victim.photoName).forEach(function (nm) {
+            PhotoStore.remove('notes', nm);
+          });
+        }
       });
     });
+    wirePhotoThumbs(root);
   }
   render();
 }
@@ -1804,20 +2324,57 @@ function noteEditor(n, done) {
   var isNew = !n;
   n = n || { id: newId(), title: '', body: '', subject: '', photoName: null, createdAt: Date.now(), updatedAt: Date.now() };
   var subject = n.subject;
-  openModal(modalHead(isNew ? '新增筆記' : '編輯筆記', n.photoName ? '這則有照片，網頁版暫不顯示照片' : '') +
+  var ph = editorPhotos('notes', n);
+  openModal(modalHead(isNew ? '新增筆記' : '編輯筆記', '') +
     '<label class="flabel">標題（可空）</label><input id="nt-title" value="' + esc(n.title) + '">' +
     '<label class="flabel">科目</label>' + subjChipsHtml(subject, true) +
     '<label class="flabel">內文</label><textarea id="nt-body" rows="8">' + esc(n.body) + '</textarea>' +
-    '<div style="height:16px"></div><button class="btn cta" id="nt-save">儲存</button>');
+    '<div id="ph-wrap"></div>' +
+    '<div style="height:16px"></div><button class="btn peri block" id="nt-ai">AI 整理（摘要＋重點）</button>' +
+    '<div style="height:10px"></div><button class="btn cta" id="nt-save">儲存</button>');
+  ModalOnClose = function () { ph.rollback(); };
+  ph.render($('#ph-wrap'));
   wireSubjChips($('#subj-chips'), function (s) { subject = s; });
+  function setAiBusy(busy) {
+    var a = $('#nt-ai'), s = $('#nt-save');
+    if (a) { a.disabled = busy; a.textContent = busy ? 'AI 整理中…' : 'AI 整理（摘要＋重點）'; }
+    if (s) s.disabled = busy;
+  }
+  $('#nt-ai').addEventListener('click', function () {
+    var photos = ph.state.names.slice();
+    var bodyText = $('#nt-body').value.trim();
+    if (!photos.length && !bodyText) {
+      toast('先附上一張照片，或先寫一點內文，再用 AI 整理'); return;
+    }
+    if (!loadAiSettings().key) { toast('這個帳號還沒有 AI 設定'); return; }
+    var prompt = photos.length ? NOTE_PROMPT : NOTE_PROMPT + '\n\n以下是內容：\n' + bodyText;
+    setAiBusy(true);
+    var prep = photos.length ? prepareAiImages('notes', photos) : Promise.resolve([]);
+    prep.then(function (imgs) { return aiChat(prompt, imgs); }).then(function (reply) {
+      setAiBusy(false);
+      var cur = $('#nt-body').value;
+      if (!cur.trim()) { $('#nt-body').value = reply; toast('AI 整理完成'); return; }
+      chooseAiApply('AI 整理好了', '內文已經有文字，要怎麼放這次的整理結果？', '取代內文')
+        .then(function (pick) {
+          if (pick === 'append') $('#nt-body').value = cur.replace(/\s+$/, '') + '\n\n' + reply;
+          else if (pick === 'replace') $('#nt-body').value = reply;
+        });
+    }).catch(function (e) {
+      setAiBusy(false);
+      toast(e.message || 'AI 整理失敗，請再試一次');
+    });
+  });
   $('#nt-save').addEventListener('click', function () {
+    if (ph.state.busy) { toast('照片上傳中，等一下再儲存'); return; }
     var body = $('#nt-body').value;
-    if (!body.trim() && !n.photoName) { toast('內文或照片至少要有一項'); return; }
+    if (!body.trim() && !ph.state.names.length) { toast('內文或照片至少要有一項'); return; }
     n.title = $('#nt-title').value; n.body = body; n.subject = subject;
+    n.photoName = photoFieldOf(ph.state.names);
     n.updatedAt = Date.now();
     if (isNew) App.data.notes.push(n);
     App.data.notes.sort(function (a, b) { return b.updatedAt - a.updatedAt; });
     saveFeature('notes', writeNotes(App.data.notes)).then(function () {
+      ph.commit(); ModalOnClose = null;
       closeModal(); toast('已儲存'); done();
     });
   });
@@ -1970,27 +2527,11 @@ function viewAi(root) {
     if (!q) { err.textContent = '先輸入內容'; return; }
     this.disabled = true;
     out.innerHTML = '<span class="dim">AI 處理中…</span>';
-    fetch(aiEndpoint(ai.baseUrl), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + ai.key },
-      body: JSON.stringify({
-        model: ai.model,
-        messages: [
-          { role: 'system', content: AI_SYSTEM_PROMPT },
-          { role: 'user', content: q }
-        ]
-      })
-    }).then(function (r) {
-      return r.json().catch(function () { return null; }).then(function (data) {
-        if (!r.ok) {
-          var msg = data && data.error && data.error.message ? data.error.message : ('HTTP ' + r.status);
-          throw new Error('AI 伺服器回應錯誤：' + msg);
-        }
-        var text = data && data.choices && data.choices[0] && data.choices[0].message
-          ? data.choices[0].message.content : '';
-        if (!text) throw new Error('AI 沒有回傳內容，再試一次');
-        out.innerHTML = '<div class="card sub" style="white-space:pre-wrap;line-height:1.65">' + esc(text) + '</div>';
-      });
+    /* Same shared call path as the note/mistake AI buttons: the
+       request body is the Android shape (guard system message +
+       one-part content array for a text-only call). */
+    aiChat(q, []).then(function (text) {
+      out.innerHTML = '<div class="card sub" style="white-space:pre-wrap;line-height:1.65">' + esc(text) + '</div>';
     }).catch(function (e) {
       out.innerHTML = '';
       err.textContent = e.message || '連不上 AI 伺服器';
