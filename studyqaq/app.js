@@ -841,6 +841,7 @@ function presenceLive(list, now) {
 var App = {
   tab: 'home',
   profile: null,
+  ai: null, /* effective AI settings applied from the cloud account */
   friendships: [],
   blocks: [],
   threads: [],
@@ -1123,7 +1124,7 @@ function viewMe(root) {
       this.disabled = true;
       var p = mode === 'in' ? Auth.signIn(email, pass) : Auth.signUp(email, pass);
       p.then(function () {
-        return Promise.all([loadSocialBasics(), loadStudyData()]);
+        return Promise.all([loadSocialBasics(), loadStudyData(), syncAiSettings()]);
       }).then(function () { toast('登入成功'); go('me'); })
         .catch(function (e) { err.textContent = e.message || '失敗，請再試一次'; })
         .finally(function () { var b = $('#auth-go'); if (b) b.disabled = false; });
@@ -1151,18 +1152,14 @@ function viewMe(root) {
     '<div class="card"><h3>好友邀請</h3><div id="req-list"><span class="dim">載入中…</span></div></div>' +
     '<div class="card"><h3>好友</h3><div id="friend-list"><span class="dim">載入中…</span></div></div>' +
     '<div class="card"><h3>設定</h3>' +
-    '<p class="hint">AI 設定（自訂 API，OpenAI 相容）。Key 只存在這台裝置的瀏覽器裡，不會上傳到任何地方。</p>' +
-    '<label class="flabel">Base URL</label><input id="ai-base">' +
-    '<label class="flabel">模型</label><input id="ai-model">' +
-    '<label class="flabel">API Key</label><input id="ai-key" type="password" autocomplete="off">' +
-    '<div style="height:12px"></div><button class="btn peri block" id="ai-save">儲存 AI 設定</button>' +
-    '<div style="height:16px"></div><button class="btn ghost block" id="signout">登出</button></div>' +
+    '<button class="btn ghost block" id="signout">登出</button></div>' +
     '<div class="card sub"><h3>把 Study QAQ 加到主畫面</h3>' +
     '<p class="hint">iPhone：用 Safari 開這個頁面 → 點分享鈕 →「加入主畫面」，桌面就會出現 Study QAQ 圖示，點開跟 App 一樣全螢幕。</p></div>' +
     '<footer class="legal">貼圖：Noto Emoji（Google）— Apache License 2.0，來源 github.com/googlefonts/noto-emoji（網頁版使用同一套圖稿的 SVG 版本）。<br>' +
     '公告資料來源：臺中市立惠文高中官網。登入的帳號與資料會在各裝置間同步。</footer>';
   $('#signout').addEventListener('click', function () {
     Auth.signOut();
+    App.ai = null; /* the key leaves memory on sign-out */
     App.profile = null; App.friendships = []; App.threads = []; App.blocks = [];
     App.data = { notes: [], mistakes: [], flashcards: [], focus: [], studyDays: [] };
     renderTabbar(); go('home'); toast('已登出');
@@ -1187,25 +1184,129 @@ function viewMe(root) {
     }).catch(function (e) { err.textContent = e.message; })
       .finally(function () { var b = $('#save-nick'); if (b) b.disabled = false; });
   });
-  var ai = loadAiSettings();
-  $('#ai-base').value = ai.baseUrl; $('#ai-model').value = ai.model; $('#ai-key').value = ai.key;
-  $('#ai-save').addEventListener('click', function () {
-    localStorage.setItem('sq_ai', JSON.stringify({
-      baseUrl: $('#ai-base').value.trim(), model: $('#ai-model').value.trim(),
-      key: $('#ai-key').value.trim()
-    }));
-    toast('AI 設定已存（只存這台裝置）');
-  });
   $('#add-btn').addEventListener('click', function () { addFriendByCode(); });
   loadRequestsAndFriends();
 }
-function loadAiSettings() {
-  var d = { baseUrl: 'https://www.wujie-api.com/v1', model: 'DeepSeek V4.1 Flash', key: '' };
+/* ============================== AI settings sync ===================
+   The 自訂 API (OpenAI-compatible) settings follow the cloud account
+   in the users/{uid}/data/ai_settings doc. Payload = four lines —
+     line 1: legacy source field — encode always writes "deepseek"
+             and decode ignores the value entirely (older payloads
+             may carry other values; every payload now means the
+             自訂 API)
+     line 2: 自訂 API key
+     line 3: 自訂 API base URL
+     line 4: 自訂 API model
+   An account's own key only ever lives in that account's Firestore
+   doc and this device's local cache. There is deliberately no
+   settings form: sign-in applies the account's settings
+   automatically. When neither the account nor the cache supplies
+   settings, loadAiSettings falls back to a built-in shared default
+   (see builtinAiSettings below); the fallback is assembled at
+   runtime, is never written to the local cache, and so can never
+   seed-upload into anyone's cloud doc. */
+function aiSettingsEncode(p) {
+  return [
+    'deepseek',
+    (p.key || '').trim(),
+    (p.baseUrl || '').trim(),
+    (p.model || '').trim()
+  ].join('\n');
+}
+/* Parses a cloud payload; null when blank / unusable. Line 1 is the
+   legacy source field and is ignored — any value (or none) decodes
+   to the 自訂 API; missing lines are ''. */
+function aiSettingsDecode(payload) {
+  if (!payload || !String(payload).trim()) return null;
+  var lines = String(payload).split('\n');
+  function line(i) { return i < lines.length ? lines[i].trim() : ''; }
+  return {
+    source: 'deepseek',
+    key: line(1),
+    baseUrl: line(2),
+    model: line(3)
+  };
+}
+/* The device-local cache (sq_ai). Written only from applied cloud
+   settings (or a pre-sync form save); kept across sign-out, like the
+   Android device stores — sign-out clears only the in-memory copy. */
+function readLocalAi() {
   try {
     var saved = JSON.parse(localStorage.getItem('sq_ai') || 'null');
-    if (saved) { d.baseUrl = saved.baseUrl || d.baseUrl; d.model = saved.model || d.model; d.key = saved.key || ''; }
-  } catch (e) { /* defaults */ }
-  return d;
+    if (!saved) return null;
+    return {
+      key: saved.key || '', baseUrl: saved.baseUrl || '', model: saved.model || ''
+    };
+  } catch (e) { return null; }
+}
+function applyAiSettings(p) {
+  App.ai = p;
+  try {
+    localStorage.setItem('sq_ai', JSON.stringify({
+      baseUrl: p.baseUrl, model: p.model, key: p.key
+    }));
+  } catch (e) { /* the cache is best-effort */ }
+}
+/* Runs on sign-in (and at boot with a restored session): a cloud
+   payload wins — it is applied and cached locally; no cloud doc but
+   a stored local cache seeds the cloud once (the Android seed rule).
+   The seed decision reads only the real local cache — the built-in
+   fallback is never seeded. Neither side has anything → App.ai
+   stays null and loadAiSettings falls back to the built-in default.
+   A network failure leaves the local cache in charge (see
+   loadAiSettings). */
+function syncAiSettings() {
+  if (!Auth.signedIn) return Promise.resolve(null);
+  return FS.getData('ai_settings').then(function (cloud) {
+    var p = cloud ? aiSettingsDecode(cloud.payload) : null;
+    if (p) { applyAiSettings(p); return p; }
+    var local = readLocalAi();
+    if (local && (local.key || local.baseUrl || local.model)) {
+      var seeded = {
+        source: 'deepseek', key: local.key,
+        baseUrl: local.baseUrl, model: local.model
+      };
+      applyAiSettings(seeded);
+      return FS.putData('ai_settings', aiSettingsEncode(seeded), Date.now())
+        .then(function () { return seeded; })
+        .catch(function () { return seeded; });
+    }
+    App.ai = null;
+    return null;
+  }).catch(function () { return App.ai; });
+}
+/* Built-in shared fallback settings (owner-provided): used only for
+   fields that neither the cloud account nor the device cache
+   supplies. The key is stored Base64-wrapped and split into
+   segments, assembled here at runtime. Read-only: it is never
+   passed to applyAiSettings, so it never enters the local cache
+   and never reaches the cloud seed path. */
+var BUILTIN_AI_KEY_PARTS = ['c2stZGNlYTIyMzBjYWE', '1YmE2Y2I0ZDIzNTY4OT', 'hlNGMxNDRiMWQwOWI4Z', 'WM0NGUzZmIzMWVkNTk4', 'MTA1ZGVkNWY5Mw=='];
+function builtinAiSettings() {
+  var key = '';
+  try { key = atob(BUILTIN_AI_KEY_PARTS.join('')); } catch (e) { key = ''; }
+  return {
+    source: 'deepseek',
+    key: key,
+    baseUrl: 'https://www.wujie-api.com/v1',
+    model: 'DeepSeek V4.1 Flash'
+  };
+}
+/* Effective settings for the AI features, in priority order: the
+   applied cloud settings, else the device cache, else the built-in
+   shared default. Per field, an empty value falls through to the
+   built-in default, so AI works for every account out of the box.
+   The "no AI settings" guard in the AI views remains as a last
+   line of defence should every source come back empty. */
+function loadAiSettings() {
+  var d = builtinAiSettings();
+  var src = App.ai || readLocalAi();
+  if (src) {
+    if (src.baseUrl) d.baseUrl = src.baseUrl;
+    if (src.model) d.model = src.model;
+    if (src.key) d.key = src.key;
+  }
+  return { baseUrl: d.baseUrl, model: d.model, key: d.key };
 }
 function addFriendByCode() {
   var box = $('#add-result');
@@ -1388,7 +1489,7 @@ function renderLearnHub() {
     '<p class="hint">共 ' + App.data.notes.length + ' 則（網頁版暫不顯示照片）</p>' +
     '<button class="btn peri block" id="lh-notes">管理筆記</button></div>' +
     '<div class="card"><h3>🤖 AI 學習</h3>' +
-    '<p class="hint">用你在「我的」設定的自訂 API 問問題、整理重點。</p>' +
+    '<p class="hint">用 AI 問問題、整理重點，設定會跟著你的帳號自動帶入。</p>' +
     '<button class="btn peri block" id="lh-ai">開啟 AI</button></div>';
   $('#lh-review').addEventListener('click', startTodayReview);
   $('#lh-focus').addEventListener('click', function () { viewFocus($('#app')); });
@@ -1839,7 +1940,7 @@ function viewFocus(root) {
     renderIdle();
   }
 }
-/* ---- AI (custom OpenAI-compatible API; key stays in this browser) -- */
+/* ---- AI (custom OpenAI-compatible API; settings follow the account) -- */
 function aiEndpoint(base) {
   var b = (base || '').replace(/\/+$/, '');
   if (/\/chat\/completions$/.test(b)) return b;
@@ -1851,8 +1952,8 @@ function viewAi(root) {
   root.innerHTML = subHead('AI 學習') +
     '<div class="card"><h3>問 AI</h3>' +
     (ai.key
-      ? '<p class="hint">目前使用自訂 API ・ 模型 ' + esc(ai.model) + '（設定在「我的」頁改）</p>'
-      : '<p class="hint salmon">還沒設定 API Key，先去「我的」頁填你的自訂 API 設定。</p>') +
+      ? '<p class="hint">目前使用自訂 API ・ 模型 ' + esc(ai.model) + '（跟著你的帳號同步）</p>'
+      : '<p class="hint salmon">這個帳號還沒有 AI 設定，AI 功能暫時不能用。</p>') +
     '<textarea id="ai-q" rows="5" placeholder="貼上課文、題目，或直接問問題…"></textarea>' +
     '<div style="height:12px"></div><button class="btn cta" id="ai-go" ' + (ai.key ? '' : 'disabled') + '>送出</button>' +
     '<div class="err" id="ai-err" style="margin-top:10px"></div>' +
@@ -1861,6 +1962,7 @@ function viewAi(root) {
     var q = $('#ai-q').value.trim();
     var err = $('#ai-err'), out = $('#ai-out');
     err.textContent = '';
+    if (!ai.key) { err.textContent = '這個帳號還沒有 AI 設定'; return; }
     if (!q) { err.textContent = '先輸入內容'; return; }
     this.disabled = true;
     out.innerHTML = '<span class="dim">AI 處理中…</span>';
@@ -2259,5 +2361,6 @@ Auth.load();
 renderTabbar();
 if (Auth.signedIn) {
   loadSocialBasics().then(function () { renderTabbar(); });
+  syncAiSettings();
 }
 go('home');
