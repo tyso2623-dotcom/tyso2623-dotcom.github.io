@@ -441,7 +441,11 @@ function prepareAiImages(feature, names) {
 var NOTE_PROMPT = '你是學習助理。請把這份內容（照片或文字）整理成繁體中文筆記，嚴格照下面格式輸出，不要加開場白、結尾或格式以外的文字：\n【摘要】\n用 3–5 句話講完整份內容在說什麼，120 字以內，不要條列。\n【重點】\n最多 7 條，每條一行、以「・」開頭、每條 30 字以內，只留核心觀念、公式、定義與年份；不要寫例子、不要逐句抄原文、不要客套話；內容太多時合併條目，不可以超過 7 條。';
 var MISTAKE_PROMPT = '請看這張題目照片，用繁體中文說明，不要客套話，嚴格照下面三段輸出，每條以 30 字以內為原則：\n【觀念】\n最多 2 條，先講這題在考什麼觀念。\n【解法步驟】\n最多 5 行短句，條列正確的解法步驟。\n【易錯點】\n最多 3 條，列出最容易錯的地方。';
 function buildAiRequestBody(model, prompt, imagesB64) {
-  var content = [{ type: 'text', text: prompt }];
+  /* The Wujie channel ignores role:'system' messages entirely (verified
+     live 2026-11-18: system guard -> persona unchanged; guard embedded
+     in the user turn -> exact refusal). So the study-assistant guard is
+     prepended to the user text instead of sent as a system message. */
+  var content = [{ type: 'text', text: AI_SYSTEM_PROMPT + '\n\n' + prompt }];
   (imagesB64 || []).forEach(function (b64) {
     content.push({
       type: 'image_url',
@@ -451,7 +455,6 @@ function buildAiRequestBody(model, prompt, imagesB64) {
   return {
     model: model,
     messages: [
-      { role: 'system', content: AI_SYSTEM_PROMPT },
       { role: 'user', content: content }
     ]
   };
