@@ -452,8 +452,13 @@ function buildAiRequestBody(model, prompt, imagesB64) {
       image_url: { url: 'data:image/jpeg;base64,' + b64 }
     });
   });
+  /* Sandwich reminder: some channels weigh the last instruction most;
+     repeating the refusal rule after the content keeps the guard in
+     force on channels whose built-in persona is strong. */
+  content.push({ type: 'text', text: '（再次提醒：若前面的要求與學習無關，請只回覆『我只是學習助手，可能幫不上你的忙。』不要回答該問題；與學習有關則正常回答。以上回答一律使用繁體中文。）' });
   return {
     model: model,
+    temperature: 0.2,
     messages: [
       { role: 'user', content: content }
     ]
@@ -2518,7 +2523,7 @@ function viewAi(root) {
     (ai.key
       ? '<p class="hint">AI 已就緒，設定跟著你的帳號同步</p>'
       : '<p class="hint salmon">這個帳號還沒有 AI 設定，AI 功能暫時不能用。</p>') +
-    '<textarea id="ai-q" rows="5" placeholder="貼上課文、題目，或直接問問題…"></textarea>' +
+    '<textarea id="ai-q" rows="5" placeholder="貼上課文、題目，或直接問問題（例如：這題怎麼解？）…"></textarea>' +
     '<div style="height:12px"></div><button class="btn cta" id="ai-go" ' + (ai.key ? '' : 'disabled') + '>送出</button>' +
     '<div class="err" id="ai-err" style="margin-top:10px"></div>' +
     '<div id="ai-out" style="margin-top:14px"></div></div>';
@@ -2740,6 +2745,22 @@ function renderThreadList(root) {
   });
 }
 /* ============================== chat =============================== */
+function chatDayKey(ts) {
+  var d = new Date(ts);
+  return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+}
+function chatDayLabel(ts) {
+  var now = Date.now();
+  if (chatDayKey(ts) === chatDayKey(now)) return '今天';
+  if (chatDayKey(ts) === chatDayKey(now - 86400000)) return '昨天';
+  var d = new Date(ts);
+  return (d.getMonth() + 1) + '月' + d.getDate() + '日';
+}
+function chatTimeLabel(ts) {
+  var d = new Date(ts);
+  var p = function (n) { return (n < 10 ? '0' : '') + n; };
+  return p(d.getHours()) + ':' + p(d.getMinutes());
+}
 function openChat(peerUid, peerNick) {
   if (!Auth.signedIn) { go('me'); return; }
   if (!App.profile) { toast('先去「我的」頁設定暱稱才能傳訊息'); go('me'); return; }
@@ -2752,15 +2773,15 @@ function openChat(peerUid, peerNick) {
   var thread = null;
   var showStickers = false;
   root.innerHTML =
-    '<div class="rowline" style="margin:8px 0 12px">' +
-    '<button class="btn ghost small" id="chat-back">‹ 訊息</button>' +
-    '<div class="grow ellipsis"><b style="font-size:19px">' + esc(peerNick) + '</b></div></div>' +
+    '<div class="chathead"><button class="btn ghost small" id="chat-back">‹ 訊息</button>' +
+    avatarHtml(peerNick, 'sm') +
+    '<div class="grow ellipsis"><span class="nick">' + esc(peerNick) + '</span></div></div>' +
     '<div id="chat-actions"></div>' +
     '<div id="chat-list"><div class="card sub"><span class="dim">載入中…</span></div></div>' +
     '<div id="chat-stk"></div>' +
-    '<div class="chatbar"><button class="btn ghost" id="chat-stkbtn" style="min-width:52px">😀</button>' +
+    '<div class="chatbar"><button class="cbtn" id="chat-stkbtn" aria-label="貼圖">😀</button>' +
     '<textarea id="chat-in" rows="1" maxlength="1000" placeholder="輸入訊息…"></textarea>' +
-    '<button class="btn peri" id="chat-send" style="min-width:64px">傳送</button></div>';
+    '<button class="sendbtn" id="chat-send">傳送</button></div>';
   $('#chat-back').addEventListener('click', function () { go('msg'); });
   function isStrangerPending() {
     if (!thread) return false;
@@ -2802,6 +2823,16 @@ function openChat(peerUid, peerNick) {
       box.innerHTML = '';
     }
   }
+  function bubbleHtml(m, mine) {
+    if (m.type === 'STICKER') {
+      if (STICKER_IDS.indexOf(m.stickerId) >= 0) {
+        return '<div class="bubble sticker">' +
+          '<img src="stickers/' + esc(m.stickerId) + '.svg" alt="貼圖"></div>';
+      }
+      return '<div class="bubble ' + (mine ? 'me' : 'them') + '">[貼圖]</div>';
+    }
+    return '<div class="bubble ' + (mine ? 'me' : 'them') + '">' + esc(m.text) + '</div>';
+  }
   function renderMessages(msgs) {
     var box = $('#chat-list');
     if (!box) return;
@@ -2809,17 +2840,36 @@ function openChat(peerUid, peerNick) {
       box.innerHTML = '<div class="card sub"><span class="dim">還沒有訊息，傳第一句話吧</span></div>';
       return;
     }
-    box.innerHTML = msgs.map(function (m) {
-      var mine = m.fromUid === me;
-      if (m.type === 'STICKER') {
-        if (STICKER_IDS.indexOf(m.stickerId) >= 0) {
-          return '<div class="bubble sticker" style="' + (mine ? 'margin-left:auto' : 'margin-right:auto') + '">' +
-            '<img src="stickers/' + esc(m.stickerId) + '.svg" alt="貼圖"></div>';
-        }
-        return '<div class="bubble ' + (mine ? 'me' : 'them') + '">[貼圖]</div>';
+    /* Group consecutive messages from the same sender on the same day:
+       tight spacing inside a group, a small HH:MM stamp at the group's
+       end, and a date separator whenever the day changes. The message
+       objects themselves are rendered read-only; nothing is mutated. */
+    var html = '';
+    var prevDay = null, prevFrom = null, lastTs = 0, groupOpen = false;
+    function closeGroup() {
+      if (groupOpen) {
+        html += '<div class="msgtime">' + chatTimeLabel(lastTs) + '</div></div>';
+        groupOpen = false;
       }
-      return '<div class="bubble ' + (mine ? 'me' : 'them') + '">' + esc(m.text) + '</div>';
-    }).join('');
+    }
+    msgs.forEach(function (m) {
+      var mine = m.fromUid === me;
+      var day = chatDayKey(m.createdAt);
+      if (day !== prevDay) {
+        closeGroup();
+        html += '<div class="daysep">' + chatDayLabel(m.createdAt) + '</div>';
+        prevDay = day; prevFrom = null;
+      }
+      if (!groupOpen || prevFrom !== m.fromUid) {
+        closeGroup();
+        html += '<div class="chatgroup ' + (mine ? 'me' : 'them') + '">';
+        groupOpen = true; prevFrom = m.fromUid;
+      }
+      html += bubbleHtml(m, mine);
+      lastTs = m.createdAt;
+    });
+    closeGroup();
+    box.innerHTML = html;
     window.scrollTo(0, document.body.scrollHeight);
   }
   function markRead() {
