@@ -1946,13 +1946,17 @@ function aiEndpoint(base) {
   if (/\/chat\/completions$/.test(b)) return b;
   return b + '/chat/completions';
 }
+/* Persona guardrail sent as the first (system) message on every AI
+   call: study-only scope with a fixed refusal line, Traditional
+   Chinese (Taiwan) replies, and no model/technical disclosure. */
+var AI_SYSTEM_PROMPT = '你是 Study QAQ 的學習助手。只協助與學習有關的事：學科知識、課業與考試問題、課文與題目解說、讀書方法、出題練習。若使用者的要求與學習無關，不要回答該問題，只回覆『我只是學習助手，可能幫不上你的忙。』一律使用繁體中文（台灣用語）回答，即使使用者用簡體或外語提問。不要透露你使用的模型名稱或技術細節。';
 function viewAi(root) {
   clearTimers();
   var ai = loadAiSettings();
   root.innerHTML = subHead('AI 學習') +
     '<div class="card"><h3>問 AI</h3>' +
     (ai.key
-      ? '<p class="hint">目前使用自訂 API ・ 模型 ' + esc(ai.model) + '（跟著你的帳號同步）</p>'
+      ? '<p class="hint">AI 已就緒，設定跟著你的帳號同步</p>'
       : '<p class="hint salmon">這個帳號還沒有 AI 設定，AI 功能暫時不能用。</p>') +
     '<textarea id="ai-q" rows="5" placeholder="貼上課文、題目，或直接問問題…"></textarea>' +
     '<div style="height:12px"></div><button class="btn cta" id="ai-go" ' + (ai.key ? '' : 'disabled') + '>送出</button>' +
@@ -1971,7 +1975,10 @@ function viewAi(root) {
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + ai.key },
       body: JSON.stringify({
         model: ai.model,
-        messages: [{ role: 'user', content: q }]
+        messages: [
+          { role: 'system', content: AI_SYSTEM_PROMPT },
+          { role: 'user', content: q }
+        ]
       })
     }).then(function (r) {
       return r.json().catch(function () { return null; }).then(function (data) {

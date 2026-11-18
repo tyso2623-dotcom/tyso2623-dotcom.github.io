@@ -1,6 +1,6 @@
 /* Study QAQ PWA service worker: shell cache-first, data network-first.
    Firebase / Google API traffic is never intercepted. */
-var CACHE = 'studyqaq-v3';
+var CACHE = 'studyqaq-v4';
 var SHELL = [
   './',
   'index.html',
