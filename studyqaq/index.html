@@ -6,6 +6,7 @@
 <title>Study QAQ</title>
 <meta name="description" content="惠文高一公告・學習・一起讀書・好友私訊 — Study QAQ 網頁版">
 <meta name="theme-color" content="#171410">
+<meta name="sq-build" content="9">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Study QAQ">
@@ -13,19 +14,124 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
 <link rel="stylesheet" href="app.css">
+<style>
+#sq-update-banner{position:fixed;top:0;left:0;right:0;z-index:9999;
+  background:#211D16;border-bottom:2px solid #E2725B;color:#F0E8D8;
+  padding:14px 16px calc(14px + env(safe-area-inset-top, 0px));
+  padding-top:calc(14px + env(safe-area-inset-top, 0px));
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  box-shadow:0 6px 24px rgba(0,0,0,.45);
+  font-family:inherit}
+#sq-update-banner[hidden]{display:none}
+#sq-update-banner .sq-update-text{flex:1 1 220px;min-width:200px}
+#sq-update-banner .sq-update-text strong{display:block;font-size:19px;line-height:1.35}
+#sq-update-banner .sq-update-text span{display:block;font-size:15px;line-height:1.5;color:#CFC4AC;margin-top:2px}
+#sq-update-btn{flex:0 0 auto;background:#E2725B;color:#1A120B;border:0;
+  font-size:18px;font-weight:700;padding:13px 22px;border-radius:999px;cursor:pointer}
+#sq-update-btn[disabled]{opacity:.6}
+#sq-update-later{flex:0 0 auto;background:transparent;color:#A9C6EA;border:0;
+  font-size:15px;padding:10px 6px;cursor:pointer;text-decoration:underline}
+</style>
 </head>
 <body>
+<div id="sq-update-banner" hidden role="alert">
+  <div class="sq-update-text">
+    <strong>你現在是舊版</strong>
+    <span>有新版可以用了。點一下就能換成最新版，你的登入、筆記和資料都不會不見。</span>
+  </div>
+  <button id="sq-update-btn" type="button">一鍵更新</button>
+  <button id="sq-update-later" type="button">稍後再說</button>
+</div>
 <div id="app"></div>
 <nav id="tabbar" aria-label="主導覽"></nav>
 <div id="modal-root"></div>
 <div id="toast-root"></div>
 <script src="app.js"></script>
 <script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js').catch(function () { /* offline shell unavailable */ });
-  });
-}
+/* Open-time version check: compare this page's build against the live
+   version.json. If this copy is old, show a one-click update banner.
+   The update only replaces the program files (Cache Storage + service
+   worker registration); localStorage, sign-in state and all user data
+   are never touched. Keep SQ_BUILD in sync with version.json and the
+   cache name in sw.js. */
+window.__SQ_BUILD__ = 9;
+(function () {
+  var SQ_BUILD = 9;
+  var banner = document.getElementById('sq-update-banner');
+  var btn = document.getElementById('sq-update-btn');
+  var later = document.getElementById('sq-update-later');
+  var remoteBuild = 0;
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+        .then(function (reg) { if (reg.update) reg.update().catch(function () {}); })
+        .catch(function () { /* offline shell unavailable */ });
+    });
+  }
+
+  function doUpdate() {
+    btn.disabled = true;
+    btn.textContent = '更新中…';
+    var done = false;
+    function go() {
+      if (done) return;
+      done = true;
+      var u;
+      try { u = new URL(window.location.href); }
+      catch (e) { window.location.reload(); return; }
+      u.searchParams.set('v', String(remoteBuild || 'new'));
+      window.location.replace(u.toString());
+    }
+    // Safety net: never leave the user stuck on "更新中…".
+    setTimeout(go, 5000);
+    var steps = Promise.resolve();
+    if ('serviceWorker' in navigator) {
+      steps = steps.then(function () {
+        return navigator.serviceWorker.getRegistrations().then(function (regs) {
+          return Promise.all(regs.map(function (reg) {
+            var waits = [];
+            if (reg.waiting) {
+              try { reg.waiting.postMessage({ type: 'SKIP_WAITING' }); } catch (e) {}
+            }
+            if (reg.update) waits.push(reg.update().catch(function () {}));
+            waits.push(reg.unregister().catch(function () { return false; }));
+            return Promise.all(waits);
+          }));
+        }).catch(function () {});
+      });
+    }
+    if (window.caches && caches.keys) {
+      steps = steps.then(function () {
+        return caches.keys().then(function (keys) {
+          return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+        }).catch(function () {});
+      });
+    }
+    steps.then(go, go);
+  }
+
+  if (btn) btn.addEventListener('click', doUpdate);
+  if (later) later.addEventListener('click', function () { banner.hidden = true; });
+
+  function check() {
+    if (!window.fetch) return;
+    fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (j && typeof j.build === 'number' && j.build > SQ_BUILD) {
+          remoteBuild = j.build;
+          banner.hidden = false;
+        }
+      })
+      .catch(function () { /* offline or not published yet: stay silent */ });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', check);
+  } else {
+    check();
+  }
+})();
 </script>
 </body>
 </html>
